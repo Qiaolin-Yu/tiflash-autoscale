@@ -31,7 +31,7 @@ type server struct {
 func (s *server) GetTopo(ctx context.Context, in *pb.GetTopoRequest) (*pb.GetTopoResponse, error) {
 	ts := timestamppb.Now()
 
-	//TODO: call function to get topo
+	//TODO: call a function to get topo
 	topoList := []string{"aaa,bbb"}
 	return &pb.GetTopoResponse{TidbClusterID: in.TidbClusterID, Timestamp: ts, TopoList: topoList}, nil
 }
