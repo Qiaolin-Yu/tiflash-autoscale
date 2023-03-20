@@ -234,7 +234,12 @@ func HttpHandleGetTopology(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 	Logger.Infof("[HTTP]GetTopology, tenantName: %v, client: %v", tenantName, ip)
-	_, currentState, _ := Cm4Http.AutoScaleMeta.GetTenantState(tenantName)
+	flag, currentState, _ := Cm4Http.AutoScaleMeta.GetTenantState(tenantName)
+	if !flag {
+		retStr = string(ret.WriteResp(1, TenantState2String(currentState), "get state failed, tenant does not exist", nil))
+		io.WriteString(w, retStr)
+		return
+	}
 	retStr = string(ret.WriteResp(0, TenantState2String(currentState), "", Cm4Http.AutoScaleMeta.GetTopology(tenantName)))
 	io.WriteString(w, retStr)
 }
