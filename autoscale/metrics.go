@@ -76,6 +76,7 @@ var (
 	MetricOfHttpRequestSharedFixedPoolCnt                = MetricOfHttpRequestCnt.WithLabelValues("shared_fixed_pool")
 	MetricOfHttpRequestGetMetricsFromNodeCnt             = MetricOfHttpRequestCnt.WithLabelValues("get_metrics_from_node")
 	MetricOfHttpRequestHttpHandleResumeAndGetTopologyCnt = MetricOfHttpRequestCnt.WithLabelValues("http_handle_resume_and_get_topology")
+	MetricOfHttpRequestHttpHandleGetTopologyCnt          = MetricOfHttpRequestCnt.WithLabelValues("http_handle_get_topology")
 	MetricOfHttpRequestHttpHandlePauseForTestCnt         = MetricOfHttpRequestCnt.WithLabelValues("http_handle_pause_for_test")
 	MetricOfHttpRequestDumpMetaCnt                       = MetricOfHttpRequestCnt.WithLabelValues("dump_meta")
 
@@ -92,8 +93,10 @@ var (
 	MetricOfHttpRequestSharedFixedPoolMetricSeconds                = MetricOfHttpRequestSeconds.WithLabelValues("shared_fixed_pool")
 	MetricOfHttpRequestGetMetricsFromNodeSeconds                   = MetricOfHttpRequestSeconds.WithLabelValues("get_metrics_from_node")
 	MetricOfHttpRequestHttpHandleResumeAndGetTopologyMetricSeconds = MetricOfHttpRequestSeconds.WithLabelValues("http_handle_resume_and_get_topology")
-	MetricOfHttpRequestHttpHandlePauseForTestMetricSeconds         = MetricOfHttpRequestSeconds.WithLabelValues("http_handle_pause_for_test")
-	MetricOfHttpRequestDumpMetaSeconds                             = MetricOfHttpRequestSeconds.WithLabelValues("dump_meta")
+	MetricOfHttpRequestHttpHandleGetTopologyMetricSeconds          = MetricOfHttpRequestSeconds.WithLabelValues("http_handle_get_topology")
+
+	MetricOfHttpRequestHttpHandlePauseForTestMetricSeconds = MetricOfHttpRequestSeconds.WithLabelValues("http_handle_pause_for_test")
+	MetricOfHttpRequestDumpMetaSeconds                     = MetricOfHttpRequestSeconds.WithLabelValues("dump_meta")
 
 	MetricOfChangeOfPodOnTenantCnt = promauto.NewCounterVec(
 		prometheus.CounterOpts{

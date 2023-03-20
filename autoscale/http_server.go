@@ -27,7 +27,7 @@ var HttpResumeCheckIntervalMs = 100
 
 var httpReqId = atomic.Int32{}
 
-type ResumeAndGetTopologyResult struct {
+type GetTopologyResult struct {
 	HasError  int      `json:"hasError"`
 	ErrorInfo string   `json:"errorInfo"`
 	State     string   `json:"state"`
@@ -97,7 +97,7 @@ func getIP(r *http.Request) (string, error) {
 	return "", errors.New("IP not found")
 }
 
-func (ret *ResumeAndGetTopologyResult) WriteResp(hasErr int, state string, errInfo string, topo []string) []byte {
+func (ret *GetTopologyResult) WriteResp(hasErr int, state string, errInfo string, topo []string) []byte {
 	// Logger.Infof("[HTTP]ResumeAndGetTopology, WriteResp: %v | %v | %v | %+v", hasErr, state, errInfo, topo)
 	ret.HasError = hasErr
 	ret.State = state
@@ -117,7 +117,7 @@ func SharedFixedPool(w http.ResponseWriter, req *http.Request) {
 	w.Header().Set("Access-Control-Allow-Origin", "*")
 	ip, _ := getIP(req)
 	Logger.Infof("[HTTP]SharedFixedPool, client: %v", ip)
-	ret := ResumeAndGetTopologyResult{Topology: make([]string, 0, 5)}
+	ret := GetTopologyResult{Topology: make([]string, 0, 5)}
 	if UseSpecialTenantAsFixPool {
 		io.WriteString(w, string(ret.WriteResp(0, "fixpool", "", Cm4Http.AutoScaleMeta.GetTopology(SpecialTenantNameForFixPool))))
 	} else {
@@ -131,7 +131,7 @@ func SharedFixedPool(w http.ResponseWriter, req *http.Request) {
 }
 
 func ResumeAndGetTopology(w http.ResponseWriter, tenantName string, reqid int32, version string) {
-	ret := ResumeAndGetTopologyResult{Topology: make([]string, 0, 5)}
+	ret := GetTopologyResult{Topology: make([]string, 0, 5)}
 	retStr := ""
 	defer func() {
 		Logger.Infof("[HTTP]ResumeAndGetTopology, reqid:%v resp:%v", reqid, retStr)
@@ -217,6 +217,28 @@ func HttpHandleResumeAndGetTopology(w http.ResponseWriter, req *http.Request) {
 	ResumeAndGetTopology(w, tenantName, curReqID, version)
 }
 
+func HttpHandleGetTopology(w http.ResponseWriter, req *http.Request) {
+	ret := GetTopologyResult{Topology: make([]string, 0, 5)}
+	retStr := ""
+	start := time.Now()
+	defer func() {
+		MetricOfHttpRequestHttpHandleGetTopologyMetricSeconds.Observe(time.Since(start).Seconds())
+	}()
+	MetricOfHttpRequestHttpHandleGetTopologyCnt.Inc()
+	w.Header().Set("Access-Control-Allow-Origin", "*")
+	ip, _ := getIP(req)
+	tenantName := req.FormValue("tidbclusterid")
+	if tenantName == "" {
+		retStr = string(ret.WriteResp(1, "unknown", "invalid tidbclusterid", nil))
+		io.WriteString(w, retStr)
+		return
+	}
+	Logger.Infof("[HTTP]GetTopology, tenantName: %v, client: %v", tenantName, ip)
+	_, currentState, _ := Cm4Http.AutoScaleMeta.GetTenantState(tenantName)
+	retStr = string(ret.WriteResp(0, TenantState2String(currentState), "", Cm4Http.AutoScaleMeta.GetTopology(tenantName)))
+	io.WriteString(w, retStr)
+}
+
 func HttpHandlePauseForTest(w http.ResponseWriter, req *http.Request) {
 	start := time.Now()
 	defer func() {
@@ -226,7 +248,7 @@ func HttpHandlePauseForTest(w http.ResponseWriter, req *http.Request) {
 	w.Header().Set("Access-Control-Allow-Origin", "*")
 	tenantName := req.FormValue("tidbclusterid")
 
-	ret := ResumeAndGetTopologyResult{Topology: make([]string, 0, 5)}
+	ret := GetTopologyResult{Topology: make([]string, 0, 5)}
 	if tenantName == "" {
 		io.WriteString(w, string(ret.WriteResp(1, "unknown", "invalid tidbclusterid", nil)))
 		return
@@ -382,6 +404,7 @@ func NewAutoscaleHttpServer() *AutoscaleHttpServer {
 	http.HandleFunc("/pause4test", HttpHandlePauseForTest)
 	http.HandleFunc("/sharedfixedpool", SharedFixedPool)
 	http.HandleFunc("/dumpmeta", DumpMeta)
+	http.HandleFunc("/get-topology", HttpHandleGetTopology)
 	srv := &http.Server{Addr: ":" + HttpServerPort}
 	ret := &AutoscaleHttpServer{
 		server: srv,
