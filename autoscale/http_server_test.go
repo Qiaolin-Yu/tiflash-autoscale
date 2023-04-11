@@ -148,6 +148,38 @@ func TestHttpServer(t *testing.T) {
 	assertEqual(t, res["state"].(string), "resumed")
 	assertEqual(t, res["topology"].([]interface{})[0].(string), "127.0.0.1:3930")
 
+	// test HttpHandleGetTopology
+	Logger.Infof("[http][test]HttpHandleGetTopology")
+	getTopologyResp, err := http.PostForm(httpServerAddr+"/get-topology", url.Values{
+		"tidbclusterid": {"t2"},
+	})
+	assert.NoError(t, err)
+	defer getTopologyResp.Body.Close()
+	assertEqual(t, getTopologyResp.StatusCode, http.StatusOK)
+	data, err = io.ReadAll(getTopologyResp.Body)
+	assert.NoError(t, err)
+	err = json.Unmarshal(data, &res)
+	assert.NoError(t, err)
+	assertEqual(t, res["hasError"].(float64), 0.0)
+	assertEqual(t, res["errorInfo"].(string), "")
+	assertEqual(t, res["state"].(string), "resumed")
+	assertEqual(t, res["topology"].([]interface{})[0].(string), "127.0.0.1:3930")
+
+	getTopologyResp, err = http.PostForm(httpServerAddr+"/get-topology", url.Values{
+		"tidbclusterid": {"t1"},
+	})
+	assert.NoError(t, err)
+	defer getTopologyResp.Body.Close()
+	assertEqual(t, getTopologyResp.StatusCode, http.StatusOK)
+	data, err = io.ReadAll(getTopologyResp.Body)
+	assert.NoError(t, err)
+	err = json.Unmarshal(data, &res)
+	assert.NoError(t, err)
+	assertEqual(t, res["hasError"].(float64), 1.0)
+	assert.Contains(t, res["errorInfo"].(string), "tenant does not exist")
+	assertEqual(t, res["state"].(string), "unknown")
+	assertEqual(t, res["topology"], nil)
+
 	// test SharedFixedPool
 	Logger.Infof("[http][test]SharedFixedPool")
 	shareFixedPoolResp, err := http.Get(httpServerAddr + "/sharedfixedpool")
