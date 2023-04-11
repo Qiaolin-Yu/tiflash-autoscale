@@ -668,7 +668,7 @@ func (c *ClusterManager) createCloneSet(cloneSet v1alpha1.CloneSet) (*v1alpha1.C
 
 func (c *ClusterManager) getSupervisorRdVersion() string {
 	if OptionRunMode == RunModeServeless {
-		return "4"
+		return "5"
 	} else if OptionRunMode == RunModeDedicated { //dedicated tier
 		return "2"
 	} else {
@@ -734,7 +734,7 @@ func (c *ClusterManager) getVolumesMount() []v1.VolumeMount {
 
 func (c *ClusterManager) getVolumeClaimTemplates() []v1.PersistentVolumeClaim {
 	if OptionRunMode == RunModeServeless {
-		scn := "ebs-sc"
+		scn := "tiflash-gp3-6000-600"
 		vm := v1.PersistentVolumeFilesystem
 		return []v1.PersistentVolumeClaim{
 			{
