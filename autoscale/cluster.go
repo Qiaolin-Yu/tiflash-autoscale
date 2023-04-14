@@ -756,7 +756,7 @@ func (c *ClusterManager) getVolumeClaimTemplates() []v1.PersistentVolumeClaim {
 			},
 		}
 	} else if OptionRunMode == RunModeDedicated { //dedicated tier
-		scn := "local-storage"
+		scn := "cloud-ssd"
 		vm := v1.PersistentVolumeFilesystem
 		return []v1.PersistentVolumeClaim{
 			{
