@@ -670,7 +670,7 @@ func (c *ClusterManager) getSupervisorRdVersion() string {
 	if OptionRunMode == RunModeServeless {
 		return "5"
 	} else if OptionRunMode == RunModeDedicated { //dedicated tier
-		return "2"
+		return "3"
 	} else {
 		return "2"
 	}
