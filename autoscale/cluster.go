@@ -670,7 +670,7 @@ func (c *ClusterManager) getSupervisorRdVersion() string {
 	if OptionRunMode == RunModeServeless {
 		return "5"
 	} else if OptionRunMode == RunModeDedicated { //dedicated tier
-		return "2"
+		return "3"
 	} else {
 		return "2"
 	}
@@ -756,7 +756,7 @@ func (c *ClusterManager) getVolumeClaimTemplates() []v1.PersistentVolumeClaim {
 			},
 		}
 	} else if OptionRunMode == RunModeDedicated { //dedicated tier
-		scn := "local-storage"
+		scn := "cloud-ssd"
 		vm := v1.PersistentVolumeFilesystem
 		return []v1.PersistentVolumeClaim{
 			{

@@ -345,6 +345,7 @@ func (c *TenantDesc) SetPod(k string, v *PodDesc) {
 	v.SetTenantInfo(c.Name)
 }
 
+// Events For Follower
 // checked
 func (c *TenantDesc) SetPodWithTenantInfo(k string, v *PodDesc, startTimeOfAssign int64) {
 	c.mu.Lock()
