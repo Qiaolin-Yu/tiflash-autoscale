@@ -345,6 +345,21 @@ func (c *TenantDesc) SetPod(k string, v *PodDesc) {
 	v.SetTenantInfo(c.Name)
 }
 
+// checked
+// called when pods GC failed
+func (c *TenantDesc) PrependPods(newPods []*PodDesc) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	ret := make([]*PodDesc, 0, len(newPods)+len(c.podList))
+	ret = append(ret, newPods...)
+	ret = append(ret, c.podList...)
+	c.podList = ret
+	for _, v := range newPods {
+		c.podMap[v.Name] = v
+		v.SetTenantInfo(c.Name)
+	}
+}
+
 // Events For Follower
 // checked
 func (c *TenantDesc) SetPodWithTenantInfo(k string, v *PodDesc, startTimeOfAssign int64) {
@@ -405,7 +420,8 @@ func (c *TenantDesc) popOnePod() *PodDesc {
 }
 
 // checked
-func (c *TenantDesc) PopPods(cnt int, ret []*PodDesc) (int, []*PodDesc) {
+func (c *TenantDesc) PopPods(cnt int) (int, []*PodDesc) {
+	ret := make([]*PodDesc, 0, cnt)
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
@@ -645,16 +661,14 @@ func (p *PrewarmPool) DoPodsWarm(c *ClusterManager) {
 		if overCnt > 0 {
 			removeCnt := MinInt(-delta, overCnt)
 
-			podsToDel, _ := p.getWarmedPods("", removeCnt)
+			podsToDel, _ := p.getWarmedPodsForGc(removeCnt)
 			podNames := make([]string, 0, removeCnt)
 			for _, v := range podsToDel {
 				podNames = append(podNames, v.Name)
 			}
 			_, err = c.removePods(podNames, 2)
 			if err != nil { // revert
-				for _, pod := range podsToDel {
-					p.putWarmedPod("", pod, false)
-				}
+				p.undoGetWarmedPodsForGc(podsToDel)
 			}
 		}
 	}
@@ -672,26 +686,45 @@ func (p *PrewarmPool) DoPodsWarm(c *ClusterManager) {
 	}
 }
 
-// checked
-func (p *PrewarmPool) getWarmedPods(tenantName string, cnt int) ([]*PodDesc, int) {
+func (p *PrewarmPool) getWarmedPodsForGc(cnt int) ([]*PodDesc, int) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	podnames := p.WarmedPods.GetPodNames()
-	podsToAssign := make([]*PodDesc, 0, cnt)
+	podsForGc := make([]*PodDesc, 0, cnt)
 	for _, k := range podnames {
 		if cnt > 0 {
 			v := p.WarmedPods.RemovePod(k)
 			if v != nil {
-				podsToAssign = append(podsToAssign, v)
+				podsForGc = append(podsForGc, v)
 				cnt--
 			} else {
-				Logger.Warnf("[PrewarmPool::getWarmedPods] p.WarmedPods.RemovePod fail, return nil!")
+				Logger.Warnf("[PrewarmPool::getWarmedPodsForGc] p.WarmedPods.RemovePod fail, return nil!")
 			}
 		} else {
 			//enough pods, break early
 			break
 		}
 	}
+	return podsForGc, cnt
+}
+
+func (p *PrewarmPool) undoGetWarmedPodsForGc(pods []*PodDesc) {
+	for i, pod := range pods {
+		Logger.Infof("[PrewarmPool]undo GetWarmedPodsForGc, idx: %v pod: %v ", i, pod.Name)
+	}
+	p.mu.Lock()
+	defer p.mu.Unlock()
+
+	p.WarmedPods.PrependPods(pods) // no need to set startTimeOfAssign, since there is no tenantInfo
+
+}
+
+// checked
+func (p *PrewarmPool) getWarmedPods(tenantName string, cnt int) ([]*PodDesc, int) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+
+	cnt, podsToAssign := p.WarmedPods.PopPods(cnt)
 	if tenantName != "" {
 		p.tenantLastOpResultMap[tenantName] = &PrewarmPoolOpResult{
 			failCnt: cnt,
@@ -1475,8 +1508,8 @@ func (c *AutoScaleMeta) removePodFromTenant(removeCnt int, tenant string, tsCont
 
 	cnt := removeCnt
 	exceptionCnt := 0
-	podsToUnassign := make([]*PodDesc, 0, removeCnt)
-	cnt, podsToUnassign = tenantDesc.PopPods(cnt, podsToUnassign)
+	var podsToUnassign []*PodDesc
+	cnt, podsToUnassign = tenantDesc.PopPods(cnt)
 	if isPause {
 		tenantDesc.SyncStatePaused() // early sync paused state, in order to let user be able to resume early if he want
 	}
