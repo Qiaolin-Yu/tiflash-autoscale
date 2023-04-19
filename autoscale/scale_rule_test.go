@@ -20,9 +20,9 @@ func TestComputeBestCore3(t *testing.T) {
 	minPods := 1
 	maxPods := 4
 	tenantDesc := NewAutoPauseTenantDescWithState("test1", minPods, maxPods, TenantStateResumed, "")
-	tenantDesc.SetPod("p1", &PodDesc{Name: "p1"})
-	tenantDesc.SetPod("p2", &PodDesc{Name: "p3"})
-	tenantDesc.SetPod("p3", &PodDesc{Name: "p3"})
+	tenantDesc.AppendPod("p1", &PodDesc{Name: "p1"})
+	tenantDesc.AppendPod("p2", &PodDesc{Name: "p3"})
+	tenantDesc.AppendPod("p3", &PodDesc{Name: "p3"})
 	target, delta := ComputeBestPodsInRuleOfCompute(
 		tenantDesc, ComputeCpuUsageCoresPerPod(0.1376888115180687), 0.2, 0.5)
 	assertEqual(t, target, 1)
@@ -35,7 +35,7 @@ func TestComputeBestCore(t *testing.T) {
 	minPods := 1
 	maxPods := 4
 	tenantDesc := NewAutoPauseTenantDescWithState("test1", minPods, maxPods, TenantStateResumed, "")
-	tenantDesc.SetPod("p1", &PodDesc{Name: "p1"})
+	tenantDesc.AppendPod("p1", &PodDesc{Name: "p1"})
 	target, delta := ComputeBestPodsInRuleOfCompute(
 		tenantDesc, ComputeCpuUsageCoresPerPod(1.0), 0.6, 0.8)
 	assertEqual(t, target, 2)
@@ -60,7 +60,7 @@ func TestComputeBestCore(t *testing.T) {
 	assertEqual(t, delta, 0)
 
 	// resize CntOfPods from 1 to 2
-	tenantDesc.SetPod("p2", &PodDesc{Name: "p2"})
+	tenantDesc.AppendPod("p2", &PodDesc{Name: "p2"})
 	target, delta = ComputeBestPodsInRuleOfCompute(
 		tenantDesc, ComputeCpuUsageCoresPerPod(1.0), 0.6, 0.8)
 	assertEqual(t, target, 3)
@@ -101,7 +101,7 @@ func TestComputeBestCore(t *testing.T) {
 	assertEqual(t, delta, 0)
 
 	// resize CntOfPods from 2 to 3
-	tenantDesc.SetPod("p3", &PodDesc{Name: "p3"})
+	tenantDesc.AppendPod("p3", &PodDesc{Name: "p3"})
 	target, delta = ComputeBestPodsInRuleOfCompute(
 		tenantDesc, ComputeCpuUsageCoresPerPod(1.0), 0.6, 0.8)
 	assertEqual(t, target, 4)
@@ -136,7 +136,7 @@ func TestComputeBestCore(t *testing.T) {
 	assertEqual(t, delta <= -1, true)
 
 	// resize CntOfPods from 3 to 4
-	tenantDesc.SetPod("p4", &PodDesc{Name: "p4"})
+	tenantDesc.AppendPod("p4", &PodDesc{Name: "p4"})
 	target, delta = ComputeBestPodsInRuleOfCompute(
 		tenantDesc, ComputeCpuUsageCoresPerPod(1.0), 0.6, 0.8)
 	assertEqual(t, target == 4 || target == -1, true)
@@ -193,7 +193,7 @@ func testComputeBestCoreCommon(t *testing.T, minRatio float64, maxRatio float64)
 	cnt4 := 0
 	cnt5 := 0
 	for i := 1; i <= maxPods; i++ {
-		tenantDesc.SetPod("p1"+strconv.Itoa(i), &PodDesc{Name: "p1" + strconv.Itoa(i)})
+		tenantDesc.AppendPod("p1"+strconv.Itoa(i), &PodDesc{Name: "p1" + strconv.Itoa(i)})
 		for _, cpuRatio := range testUsagesArr {
 			target, delta := ComputeBestPodsInRuleOfCompute(
 				tenantDesc, ComputeCpuUsageCoresPerPod(cpuRatio), minRatio, maxRatio)
