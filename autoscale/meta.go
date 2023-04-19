@@ -84,6 +84,8 @@ type PodDesc struct {
 	startTime       int64 // startTime of pod, used to calcuate pending duration of pod
 	muOfGrpc        sync.Mutex
 	isStateChanging atomic.Bool
+
+	lastUsedTS int64
 	// pod        *v1.Pod
 }
 
@@ -333,7 +335,7 @@ func (c *TenantDesc) GetCntOfPods() int {
 }
 
 // checked, it has TODO
-func (c *TenantDesc) SetPod(k string, v *PodDesc) {
+func (c *TenantDesc) AppendPod(k string, v *PodDesc) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	_, ok := c.podMap[k]
@@ -716,7 +718,6 @@ func (p *PrewarmPool) undoGetWarmedPodsForGc(pods []*PodDesc) {
 	defer p.mu.Unlock()
 
 	p.WarmedPods.PrependPods(pods) // no need to set startTimeOfAssign, since there is no tenantInfo
-
 }
 
 // checked
@@ -735,7 +736,7 @@ func (p *PrewarmPool) getWarmedPods(tenantName string, cnt int) ([]*PodDesc, int
 }
 
 // checked
-func (p *PrewarmPool) putWarmedPod(fromTenantName string, pod *PodDesc, isNewPod bool) {
+func (p *PrewarmPool) putWarmedPod(fromTenantName string, pod *PodDesc, isNewPod bool, updateLastUsedTs bool) {
 	Logger.Infof("[PrewarmPool]put warmed pod fromTenant: %v pod: %v newPod:%v", fromTenantName, pod.Name, isNewPod)
 	p.mu.Lock()
 	defer p.mu.Unlock()
@@ -751,8 +752,15 @@ func (p *PrewarmPool) putWarmedPod(fromTenantName string, pod *PodDesc, isNewPod
 			Logger.Debugf("[CntOfPending]putWarmedPod, cntOfPending <= 0, cntOfPending:%v", p.cntOfPending.Load())
 		}
 	}
-	p.WarmedPods.SetPod(pod.Name, pod) // no need to set startTimeOfAssign, since there is no tenantInfo
-	if fromTenantName != "" {          // reset tenant's LastOpResult， since tenant returns pod back to pool, he has enough pods.
+	if updateLastUsedTs {
+		pod.lastUsedTS = time.Now().Unix()
+	}
+	if fromTenantName == "" {
+		pods := []*PodDesc{pod}
+		p.WarmedPods.PrependPods(pods)
+	} else {
+		p.WarmedPods.AppendPod(pod.Name, pod) // no need to set startTimeOfAssign, since there is no tenantInfo
+		// reset tenant's LastOpResult， since tenant returns pod back to pool, he has enough pods.
 		p.tenantLastOpResultMap[fromTenantName] = &PrewarmPoolOpResult{
 			failCnt: 0,
 			lastTs:  time.Now().Unix(),
@@ -1133,7 +1141,7 @@ func (c *AutoScaleMeta) GetTenantState(tenant string) (bool, int32, int) {
 // Used by controller
 func (c *AutoScaleMeta) addPreWarmFromPending(podName string, desc *PodDesc) {
 	Logger.Infof("[AutoScaleMeta]addPreWarmFromPending %v", podName)
-	c.PrewarmPool.putWarmedPod("", desc, true)
+	c.PrewarmPool.putWarmedPod("", desc, true, false)
 }
 
 // func (c *AutoScaleMeta) handleChangeOfPodIP(pod *v1.Pod) {
@@ -1430,7 +1438,7 @@ func (c *AutoScaleMeta) addPodIntoTenant(addCnt int, tenant string, tsContainer 
 	for _, v := range undoList {
 		_, ok := c.PodDescMap[v.Name]
 		if ok {
-			c.PrewarmPool.putWarmedPod(tenant, v, false) // TODO do we need treat failed pods as anomaly group, so that we handle them differently from normal ones.
+			c.PrewarmPool.putWarmedPod(tenant, v, false, false) // TODO do we need treat failed pods as anomaly group, so that we handle them differently from normal ones.
 		} else {
 			Logger.Warnf("[AutoScaleMeta][resize][addPodIntoTenant][%v] exception case: pod %v has beed deleted by k8s", tenant, v.Name)
 			exceptionCnt++
@@ -1459,7 +1467,7 @@ func HandleUnassingCase(c *AutoScaleMeta, curtenant string, v *PodDesc, tsContai
 	go func(c *AutoScaleMeta, curtenant string, v *PodDesc, tsContainer *TimeSeriesContainer) {
 		time.Sleep(time.Duration(MaxUnassignWaitTimeSec) * time.Second)
 		c.mu.Lock()
-		c.PrewarmPool.putWarmedPod(curtenant, v, false)
+		c.PrewarmPool.putWarmedPod(curtenant, v, false, true)
 		tsContainer.ResetMetricsOfPod(v.Name)
 		c.mu.Unlock()
 		Logger.Infof("[HandleUnassingCase]done. tenant:%v pod:%v", curtenant, v.Name)
@@ -1550,7 +1558,7 @@ func (c *AutoScaleMeta) removePodFromTenant(removeCnt int, tenant string, tsCont
 				c.mu.Lock()
 				// statesDeltaMap[v.Name] = ConfigMapPodStateStr(CmRnPodStateUnassigned, "")
 				tsContainer.ResetMetricsOfPod(v.Name)
-				c.PrewarmPool.putWarmedPod(tenant, v, false)
+				c.PrewarmPool.putWarmedPod(tenant, v, false, true)
 				c.mu.Unlock()
 			}
 		}(v)
@@ -1563,7 +1571,7 @@ func (c *AutoScaleMeta) removePodFromTenant(removeCnt int, tenant string, tsCont
 	for _, v := range undoList {
 		_, ok := c.PodDescMap[v.Name]
 		if ok {
-			tenantDesc.SetPod(v.Name, v) //no need to set startTimeOfAssign again
+			tenantDesc.AppendPod(v.Name, v) //no need to set startTimeOfAssign again
 		} else {
 			Logger.Warnf("[AutoScaleMeta][resize][removePodFromTenant][%v]exception case: pod %v has beed deleted by k8s", tenant, v.Name)
 			exceptionCnt++
