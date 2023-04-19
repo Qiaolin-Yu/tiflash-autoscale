@@ -43,6 +43,7 @@ var (
 	DefaultScaleIntervalSeconds      = 60
 	HardCodeMaxScaleIntervalSecOfCfg = 3600
 	MaxUnassignWaitTimeSec           = 60
+	PodGcWaitSec                     = 600
 	ReadNodeLogUploadS3Bucket        = ""
 )
 
@@ -664,6 +665,9 @@ func (p *PrewarmPool) DoPodsWarm(c *ClusterManager) {
 			removeCnt := MinInt(-delta, overCnt)
 
 			podsToDel, _ := p.getWarmedPodsForGc(removeCnt)
+			if len(podsToDel) < removeCnt {
+				Logger.Infof("[CntOfPending]DoPodsWarm, len(podsToDel) < removeCnt: %v vs %v", len(podsToDel), removeCnt)
+			}
 			podNames := make([]string, 0, removeCnt)
 			for _, v := range podsToDel {
 				podNames = append(podNames, v.Name)
@@ -695,6 +699,15 @@ func (p *PrewarmPool) getWarmedPodsForGc(cnt int) ([]*PodDesc, int) {
 	podsForGc := make([]*PodDesc, 0, cnt)
 	for _, k := range podnames {
 		if cnt > 0 {
+			podDesc, ok := p.WarmedPods.GetPod(k)
+			if !ok {
+				continue
+			} else {
+				if podDesc.lastUsedTS != 0 && time.Now().Unix()-podDesc.lastUsedTS < int64(PodGcWaitSec) { // skip warm pod which is used recently
+					Logger.Infof("[PrewarmPool][getWarmedPodsForGc]skip warm pod which is used recently, lastUsedTS: %v (%v)", podDesc.lastUsedTS, time.Unix(podDesc.lastUsedTS, 0))
+					break
+				}
+			}
 			v := p.WarmedPods.RemovePod(k)
 			if v != nil {
 				podsForGc = append(podsForGc, v)
