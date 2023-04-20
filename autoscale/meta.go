@@ -1,6 +1,7 @@
 package autoscale
 
 import (
+	"context"
 	"fmt"
 	"math"
 	"sort"
@@ -10,6 +11,7 @@ import (
 
 	supervisor "github.com/tikv/pd/supervisor_proto"
 	v1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
 	restclient "k8s.io/client-go/rest"
 )
@@ -692,9 +694,14 @@ func (p *PrewarmPool) DoPodsWarm(c *ClusterManager) {
 	//delete pods for unexpected reasons
 	speicalPodsToDel, expiredSpecialPodsToDel := c.AutoScaleMeta.GetSpeicalPodsToDelAndClearExpriedInfo()
 	if len(speicalPodsToDel) > 0 || len(expiredSpecialPodsToDel) > 0 {
-		Logger.Warnf("[CntOfPending]DoPodsWarm, delete pods for unexpected or unknwon reasons, speicalPodsToDel: %+v expiredSpecialPodsToDel: %+v", speicalPodsToDel, expiredSpecialPodsToDel)
+		Logger.Warnf("[CntOfPending]DoPodsWarm, delete pods for unexpected or unknown reasons, speicalPodsToDel: %+v expiredSpecialPodsToDel: %+v", speicalPodsToDel, expiredSpecialPodsToDel)
 	}
-	c.removePods(speicalPodsToDel, 2)
+	for _, podName := range speicalPodsToDel {
+		err := c.K8sCli.CoreV1().Pods(c.Namespace).Delete(context.TODO(), podName, metav1.DeleteOptions{})
+		if err != nil {
+			Logger.Errorf("[CntOfPending][DoPodsWarm] k8s delete pod failed, pod: %v", podName)
+		}
+	}
 
 	if err != nil {
 		Logger.Errorf("[error][PrewarmPool.DoPodsWarm] error encountered! err:%v", err.Error())
