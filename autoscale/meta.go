@@ -27,7 +27,8 @@ const (
 	TenantStatePausing  = 3
 	TenantStateUnknown  = 4
 
-	FailCntCheckTimeWindow = 300 // 300s used for DoPodsPreWarm
+	FailCntCheckTimeWindow  = 300 // 300s used for DoPodsPreWarm
+	ManualDeletePodInterval = 300 // 300s
 )
 
 var (
@@ -88,7 +89,9 @@ type PodDesc struct {
 	muOfGrpc        sync.Mutex
 	isStateChanging atomic.Bool
 
-	lastUsedTS int64
+	lastUsedTS         int64
+	phase              atomic.Value //v1.PodPhase
+	lastMunnalDeleteTs int64        // timestamp of last munnally delete pod due to pod phase error, wont race , since it is used by GetSpeicalPodsToDelAndClearExpriedInfo in singe-thread
 	// pod        *v1.Pod
 }
 
@@ -883,11 +886,21 @@ func (c *AutoScaleMeta) GetSpeicalPodsToDelAndClearExpriedInfo() ([]string, []st
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	expriedSpeicalPodsToDel := make([]string, 0, 5)
+	now := time.Now().Unix()
 	c.SpeicialPodToDelMap.Range(func(k, v interface{}) bool {
 		key := k.(string)
-		_, ok := c.PodDescMap[key]
+		podDesc, ok := c.PodDescMap[key]
 		if ok {
-			podsToDel = append(podsToDel, key)
+			phase := podDesc.phase.Load()
+			if phase != nil && phase != v1.PodPending && phase != v1.PodRunning {
+				if now-podDesc.lastMunnalDeleteTs > ManualDeletePodInterval {
+					podDesc.lastMunnalDeleteTs = now
+					podsToDel = append(podsToDel, key)
+				}
+			} else {
+				expriedSpeicalPodsToDel = append(expriedSpeicalPodsToDel, key)
+			}
+
 		} else {
 			expriedSpeicalPodsToDel = append(expriedSpeicalPodsToDel, key)
 		}
@@ -1229,14 +1242,15 @@ func (c *AutoScaleMeta) UpdatePod(pod *v1.Pod) {
 	Logger.Infof("[updatePod] %v cur_ip:%v", name, pod.Status.PodIP)
 	if !ok { // new pod
 		podDesc = &PodDesc{Name: name, IP: pod.Status.PodIP, startTime: time.Now().Unix()}
+		podDesc.phase.Store(pod.Status.Phase)
 		c.PodDescMap[name] = podDesc
-
 		if pod.Status.PodIP != "" {
 			c.addPreWarmFromPending(name, podDesc)
 			Logger.Infof("[UpdatePod]addPreWarmFromPending %v: %v state: unknown", name, pod.Status.PodIP)
 		}
 
 	} else {
+		podDesc.phase.Store(pod.Status.Phase)
 		if podDesc.Name == "" {
 			//TODO handle
 			Logger.Errorf("[UpdatePod]exception case of Pod %v", name)
