@@ -204,7 +204,7 @@ func GenerateDefaultPdAddr(tenantId string) string {
 	}
 }
 
-func (cur *YamlClusterConfig) checkAndFillEmptyFields(defaultConfig *YamlClusterConfig) {
+func (cur *YamlClusterConfig) checkAndFillEmptyFieldsAndProceedSpecialValue(defaultConfig *YamlClusterConfig) {
 	if cur.MinCores == 0 {
 		cur.MinCores = defaultConfig.MinCores
 	}
@@ -219,6 +219,9 @@ func (cur *YamlClusterConfig) checkAndFillEmptyFields(defaultConfig *YamlCluster
 	}
 	if cur.AutoPauseSeconds == 0 {
 		cur.AutoPauseSeconds = defaultConfig.AutoPauseSeconds
+	} else if cur.AutoPauseSeconds >= 86400 {
+		// cur.AutoPauseSeconds >= 86400 is speical value which means turn auto-pause OFF
+		cur.AutoPauseSeconds = 0
 	}
 	if cur.CpuLowerLimit == 0 {
 		cur.CpuLowerLimit = defaultConfig.CpuLowerLimit
@@ -262,7 +265,7 @@ func LoadYamlConfig(dataByte []byte, defaultConfig *YamlClusterConfig) YamlConfi
 		panic(err)
 	}
 	for i := range yamlConfig.ComputeClusters {
-		yamlConfig.ComputeClusters[i].checkAndFillEmptyFields(defaultConfig)
+		yamlConfig.ComputeClusters[i].checkAndFillEmptyFieldsAndProceedSpecialValue(defaultConfig)
 		Logger.Infof("[LoadYamlConfig]yamlConfig[%v]: %+v\n", i, yamlConfig.ComputeClusters[i])
 	}
 	return yamlConfig

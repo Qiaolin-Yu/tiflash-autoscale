@@ -678,6 +678,7 @@ func (p *PrewarmPool) DoPodsWarm(c *ClusterManager) {
 			}
 		}
 	}
+
 	//clean real old pending pods
 	realOldPendingPods := c.AutoScaleMeta.GetRealOldPendingPodCnt() //  call it after p.mu.unlock to avoid deadlock
 	if len(realOldPendingPods) > 0 {
@@ -687,6 +688,14 @@ func (p *PrewarmPool) DoPodsWarm(c *ClusterManager) {
 		Logger.Warnf("[CntOfPending]DoPodsWarm, clean real old pending pods, cnt: %v pods: %+v", len(realOldPendingPods), realOldPendingPods)
 		c.removePods(realOldPendingPods, 2)
 	}
+
+	//delete pods for unexpected reasons
+	speicalPodsToDel, expiredSpecialPodsToDel := c.AutoScaleMeta.GetSpeicalPodsToDelAndClearExpriedInfo()
+	if len(speicalPodsToDel) > 0 || len(expiredSpecialPodsToDel) > 0 {
+		Logger.Warnf("[CntOfPending]DoPodsWarm, delete pods for unexpected or unknwon reasons, speicalPodsToDel: %+v expiredSpecialPodsToDel: %+v", speicalPodsToDel, expiredSpecialPodsToDel)
+	}
+	c.removePods(speicalPodsToDel, 2)
+
 	if err != nil {
 		Logger.Errorf("[error][PrewarmPool.DoPodsWarm] error encountered! err:%v", err.Error())
 	}
@@ -784,6 +793,7 @@ type AutoScaleMeta struct {
 	tenantMap  map[string]*TenantDesc
 	PodDescMap map[string]*PodDesc
 	*PrewarmPool
+	SpeicialPodToDelMap sync.Map // string: bool
 
 	k8sCli        *kubernetes.Clientset
 	configManager *ConfigManager
@@ -832,6 +842,10 @@ func (c *AutoScaleMeta) Dump() string {
 	return fmt.Sprintf("tenantcnt:%v, podcnt:%v, warmpool:%v tenants:{%+v}, pods:{%+v} ", len(tenant2PodCntMap), len(pod2ip), c.WarmedPods.GetPodNames(), tenant2PodCntMap, pod2ip)
 }
 
+func (c *AutoScaleMeta) AddSpeicalPodToDel(podname string) {
+	c.SpeicialPodToDelMap.Store(podname, true)
+}
+
 func (c *AutoScaleMeta) GetTenantCnt() int {
 	c.mu.Lock()
 	defer c.mu.Unlock()
@@ -855,6 +869,27 @@ func (c *AutoScaleMeta) GetRealOldPendingPodCnt() []string {
 		}
 	}
 	return ret
+}
+
+func (c *AutoScaleMeta) GetSpeicalPodsToDelAndClearExpriedInfo() ([]string, []string) {
+	podsToDel := make([]string, 0, 5)
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	expriedSpeicalPodsToDel := make([]string, 0, 5)
+	c.SpeicialPodToDelMap.Range(func(k, v interface{}) bool {
+		key := k.(string)
+		_, ok := c.PodDescMap[key]
+		if ok {
+			podsToDel = append(podsToDel, key)
+		} else {
+			expriedSpeicalPodsToDel = append(expriedSpeicalPodsToDel, key)
+		}
+		return true
+	})
+	for _, key := range expriedSpeicalPodsToDel {
+		c.SpeicialPodToDelMap.Delete(key)
+	}
+	return podsToDel, expriedSpeicalPodsToDel
 }
 
 // checked
