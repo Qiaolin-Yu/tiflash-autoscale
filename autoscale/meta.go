@@ -43,7 +43,7 @@ var (
 	DefaultScaleIntervalSeconds      = 60
 	HardCodeMaxScaleIntervalSecOfCfg = 3600
 	MaxUnassignWaitTimeSec           = 60
-	PodGcWaitSec                     = 600
+	PodGcWaitSec                     = 60
 	ReadNodeLogUploadS3Bucket        = ""
 )
 
