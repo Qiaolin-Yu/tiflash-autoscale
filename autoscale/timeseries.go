@@ -238,8 +238,9 @@ type StatsOfTimeSeries struct {
 
 // manage timeseries of all pods
 type TimeSeriesContainer struct {
-	seriesMap        map[string]*SimpleTimeSeries // cpu metric
-	taskCntSeriesMap map[string]*SimpleTimeSeries // task cnt of tiflash metric
+	seriesMap                  map[string]*SimpleTimeSeries // cpu metric
+	taskCntSeriesMap           map[string]*SimpleTimeSeries // task cnt of tiflash metric
+	memoryExceedQuotaSeriesMap map[string]*SimpleTimeSeries // cnt of memory exceed quota in tiflash
 	// defaultCapOfSeries int
 	mu sync.Mutex
 	// promCli *PromClient
@@ -247,8 +248,9 @@ type TimeSeriesContainer struct {
 
 func NewTimeSeriesContainer() *TimeSeriesContainer {
 	return &TimeSeriesContainer{
-		seriesMap:        make(map[string]*SimpleTimeSeries),
-		taskCntSeriesMap: make(map[string]*SimpleTimeSeries),
+		seriesMap:                  make(map[string]*SimpleTimeSeries),
+		taskCntSeriesMap:           make(map[string]*SimpleTimeSeries),
+		memoryExceedQuotaSeriesMap: make(map[string]*SimpleTimeSeries),
 		// defaultCapOfSeries: defaultCapOfSeries,
 		// promCli: promCli,
 	}
@@ -342,6 +344,15 @@ func (c *TimeSeriesContainer) ResetMetricsOfPod(podname string) {
 	} else {
 		Logger.Warnf("Reset pod %v fail, entry has been removed", podname)
 	}
+
+	v, ok = c.memoryExceedQuotaSeriesMap[podname]
+	if ok {
+		delete(c.memoryExceedQuotaSeriesMap, podname)
+		// v.Reset()
+		Logger.Infof("[ResetMetricsOfPod]reset memory exceed quota metrics of pod %v , cnt:%v cond1:%v  cond1&cond2: %v ", podname, v.ValsOfMetric().Cnt(), (v.series != nil), (v.series != nil && v.series.Front() != nil))
+	} else {
+		Logger.Warnf("Reset pod %v fail, entry has been removed", podname)
+	}
 }
 
 func (cur *SimpleTimeSeries) getMinMaxTime() (int64, int64) {
@@ -424,6 +435,8 @@ func (cur *TimeSeriesContainer) SeriesMap(metricsTopic MetricsTopic) map[string]
 		return cur.seriesMap
 	} else if metricsTopic == MetricsTopicTaskCnt {
 		return cur.taskCntSeriesMap
+	} else if metricsTopic == MetricsTopicMem {
+		return cur.memoryExceedQuotaSeriesMap
 	} else {
 		panic(fmt.Errorf("unknown MetricsTopicCpu:%v", metricsTopic))
 	}
@@ -704,7 +717,6 @@ func (c *PromClient) QueryComputeTask() (map[string]*TimeValPair, error) {
 	return ret, nil
 }
 
-// QueryMemoryExceedQuota TODO @Qiaolin_Yu
 func (c *PromClient) QueryMemoryExceedQuota() (map[string]*TimeValPair, error) {
 	v1api := v1.NewAPI(c.cli)
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)

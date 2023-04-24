@@ -282,6 +282,8 @@ func (c *ClusterManager) collectMetricsLoop(metricsTopic MetricsTopic, fromMetri
 					statVal = stats[0].Avg()
 				} else if metricsTopic == MetricsTopicTaskCnt {
 					statVal = stats[0].Sum()
+				} else if metricsTopic == MetricsTopicMem {
+					statVal = stats[0].Sum()
 				} else {
 					panic(fmt.Errorf("unknown MetricsTopic#3:%v", metricsTopic))
 				}

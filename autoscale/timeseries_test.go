@@ -147,7 +147,7 @@ func TestTimeSeriesContainer(t *testing.T) {
 	// }
 
 	container := NewTimeSeriesContainer()
-	metricsTopicArr := []MetricsTopic{MetricsTopicCpu, MetricsTopicTaskCnt}
+	metricsTopicArr := []MetricsTopic{MetricsTopicCpu, MetricsTopicTaskCnt, MetricsTopicMem}
 	for _, metricsTopic := range metricsTopicArr {
 		container.InsertWithUserCfg("test", 1, []float64{2.0, 0.0}, 1, metricsTopic)
 		container.InsertWithUserCfg("test", 2, []float64{3.0, 0.0}, 1, metricsTopic)
