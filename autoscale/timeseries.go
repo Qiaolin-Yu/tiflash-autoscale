@@ -405,6 +405,7 @@ type MetricsTopic int
 const (
 	MetricsTopicCpu     = MetricsTopic(0)
 	MetricsTopicTaskCnt = MetricsTopic(1)
+	MetricsTopicMem     = MetricsTopic(2)
 )
 
 func (c *MetricsTopic) String() string {
@@ -700,5 +701,42 @@ func (c *PromClient) QueryComputeTask() (map[string]*TimeValPair, error) {
 	}
 
 	Logger.Infof("[Prom]query compute_task_cnt, ret: %v, size:%v ", ret, len(ret))
+	return ret, nil
+}
+
+// QueryMemoryExceedQuota TODO @Qiaolin_Yu
+func (c *PromClient) QueryMemoryExceedQuota() (map[string]*TimeValPair, error) {
+	v1api := v1.NewAPI(c.cli)
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	result, warnings, err := v1api.Query(ctx, "sum by(pod) (sum_over_time(tiflash_memory_exceed_quota_count{job=\"kube_sd_tiflash_proc\",metrics_topic=\"tiflash\", pod!=\"\"}[30s]))", time.Now(), v1.WithTimeout(5*time.Second))
+	if err != nil {
+		Logger.Errorf("[error][PromClient] querying Prometheus error: %v", err)
+		return nil, err
+	}
+	if len(warnings) > 0 {
+		Logger.Warnf("[warn][PromClient] Warnings: %v", warnings)
+	}
+
+	vector, ok := result.(model.Vector)
+	ret := make(map[string]*TimeValPair)
+	if ok {
+		for _, sample := range vector {
+
+			podName := sample.Metric["pod"]
+			// Logger.Infof("pod: %v", podName)
+			// lenOfVals := len(sampleStream.Values)
+
+			ret[string(podName)] = &TimeValPair{
+				time:  sample.Timestamp.Unix(),
+				value: float64(sample.Value),
+			}
+			Logger.Infof("[Prom]query memory_exceed_quota_count, key: %v time: %v val: %v", podName, sample.Timestamp.Unix(), float64(sample.Value))
+		}
+	} else {
+		Logger.Errorf("[error][Prom]type cast fail when query memory_exceed_quota_count, real result:%v ", result)
+	}
+
+	Logger.Infof("[Prom]query memory_exceed_quota_count, ret: %v, size:%v ", ret, len(ret))
 	return ret, nil
 }

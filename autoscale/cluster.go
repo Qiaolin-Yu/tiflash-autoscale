@@ -171,6 +171,10 @@ func (c *ClusterManager) collectTaskCntMetricsFromPromethuesLoop() {
 	c.collectMetricsLoop(MetricsTopicTaskCnt, false)
 }
 
+func (c *ClusterManager) collectMemoryExceedQuotaMetricsFromPromethuesLoop() {
+	c.collectMetricsLoop(MetricsTopicMem, false)
+}
+
 // checked
 func (c *ClusterManager) collectMetricsLoop(metricsTopic MetricsTopic, fromMetricServer bool) {
 	c.wg.Add(1)
@@ -213,6 +217,8 @@ func (c *ClusterManager) collectMetricsLoop(metricsTopic MetricsTopic, fromMetri
 			}
 		} else if metricsTopic == MetricsTopicTaskCnt {
 			metricOfPods, err = c.PromClient.QueryComputeTask()
+		} else if metricsTopic == MetricsTopicMem {
+			metricOfPods, err = c.PromClient.QueryMemoryExceedQuota()
 		} else {
 			panic(fmt.Errorf("unknown MetricsTopic:%v", metricsTopic))
 		}
@@ -235,12 +241,12 @@ func (c *ClusterManager) collectMetricsLoop(metricsTopic MetricsTopic, fromMetri
 				Logger.Errorf("[error][collectMetrics]tenantdesc is nil, tenant:%v", tenantName)
 				continue
 			}
-			if metricsTopic == MetricsTopicCpu {
+			if metricsTopic == MetricsTopicCpu || metricsTopic == MetricsTopicMem {
 				tsContainer.InsertWithUserCfg(podName, metric.time,
 					[]float64{
 						metric.value,
 						0.0, //TODO remove this dummy mem metric
-					}, tenantDesc.GetScaleIntervalSec(), MetricsTopicCpu)
+					}, tenantDesc.GetScaleIntervalSec(), metricsTopic)
 			} else if metricsTopic == MetricsTopicTaskCnt {
 				autoPauseIntervalSeconds := tenantDesc.GetAutoPauseIntervalSec()
 				if autoPauseIntervalSeconds == 0 {
@@ -1113,6 +1119,7 @@ func NewClusterManager(region string, isSnsEnabled bool, yamlConfig *YamlConfig)
 	go ret.collectMetricsFromPromethuesLoop()
 	go ret.manageAnalyzeTasks()
 	go ret.collectTaskCntMetricsFromPromethuesLoop()
+	go ret.collectMemoryExceedQuotaMetricsFromPromethuesLoop()
 	go ret.scanPodsStatesLoop()
 	go ret.checkFixPoolReplicaLoop()
 
