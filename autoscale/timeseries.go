@@ -721,7 +721,7 @@ func (c *PromClient) QueryMemoryExceedQuota() (map[string]*TimeValPair, error) {
 	v1api := v1.NewAPI(c.cli)
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
-	result, warnings, err := v1api.Query(ctx, "sum by(pod) (sum_over_time(tiflash_memory_exceed_quota_count{job=\"kube_sd_tiflash_proc\",metrics_topic=\"tiflash\", pod!=\"\"}[30s]))", time.Now(), v1.WithTimeout(5*time.Second))
+	result, warnings, err := v1api.Query(ctx, "sum by(pod) (increase(tiflash_memory_exceed_quota_count{job=\"kube_sd_tiflash_proc\",metrics_topic=\"tiflash\", pod!=\"\"}[30s]))", time.Now(), v1.WithTimeout(5*time.Second))
 	if err != nil {
 		Logger.Errorf("[error][PromClient] querying Prometheus error: %v", err)
 		return nil, err

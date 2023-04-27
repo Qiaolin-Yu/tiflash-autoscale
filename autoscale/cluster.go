@@ -406,41 +406,65 @@ func (task *AnalyzeTask) analyzeTaskLoop(c *ClusterManager) {
 				c.SnsManager.TryToPublishTopology(tenant.Name, time.Now().UnixNano(), tenant.GetPodNames()) // public latest topology into SNS
 			}
 		} else {
-			stats, podCpuMap, _, _, tenantMetricDesc := c.AutoScaleMeta.ComputeStatisticsOfTenant(tenant.Name, c.tsContainer, "analyzeMetrics", MetricsTopicCpu)
-			/// TODO use tenantMetricDesc to check preCondition of auto scale of this tenant
+			cpuStats, podCpuMap, _, _, tenantCpuMetricDesc := c.AutoScaleMeta.ComputeStatisticsOfTenant(tenant.Name, c.tsContainer, "analyzeMetrics", MetricsTopicCpu)
+			/// TODO use tenantCpuMetricDesc to check preCondition of auto scale of this tenant
 			autoScaleIntervalSec := tenant.GetScaleIntervalSec()
 			now := time.Now().Unix()
 			podCnt := tenant.GetCntOfPods()
 			Logger.Debugf("[analyzeTaskLoop][%v]condition of auto scale, metricPodCnt:%v podCnt:%v MinOfPodTimeseriesSize:%v MinOfMetricInterval:%v AutoScaleIntervalSec:%v   ", tenant.Name,
-				tenantMetricDesc.PodCnt, podCnt,
-				tenantMetricDesc.MinOfPodTimeseriesSize, now-tenantMetricDesc.MaxOfPodMinTime, autoScaleIntervalSec)
-			if stats != nil && tenantMetricDesc.MinOfPodTimeseriesSize >= 2 && tenantMetricDesc.MaxOfPodMinTime < now-int64(autoScaleIntervalSec)+30 {
-				cpuusage := stats[0].Avg()
-
+				tenantCpuMetricDesc.PodCnt, podCnt,
+				tenantCpuMetricDesc.MinOfPodTimeseriesSize, now-tenantCpuMetricDesc.MaxOfPodMinTime, autoScaleIntervalSec)
+			bestPodsInRuleOfCPU := -1
+			if cpuStats != nil && tenantCpuMetricDesc.MinOfPodTimeseriesSize >= 2 && tenantCpuMetricDesc.MaxOfPodMinTime < now-int64(autoScaleIntervalSec)+30 {
+				cpuusage := cpuStats[0].Avg()
 				minCpuUsageThreshold, maxCpuUsageThreshold := tenant.GetLowerAndUpperCpuScaleThreshold()
-				bestPods, _ := ComputeBestPodsInRuleOfCompute(tenant, cpuusage, minCpuUsageThreshold, maxCpuUsageThreshold)
-
-				Logger.Infof("[analyzeTaskLoop][%v]ComputeStatisticsOfTenant, Tenant %v , cpu usage: %v %v , PodsCpuMap: %+v bestPods: %v min_max_cpu_threshold: %v~%v ", tenant.Name, tenant.Name,
-					stats[0].Avg(), stats[0].Cnt(), podCpuMap, bestPods, minCpuUsageThreshold, maxCpuUsageThreshold)
-				if bestPods != -1 && cntOfPods != bestPods {
-					Logger.Infof("[analyzeTaskLoop][%v] resize pods, from %v to  %v , tenant: %v", tenant.Name, tenant.GetCntOfPods(), bestPods, tenant.Name)
-					c.AutoScaleMeta.ResizePodsOfTenant(cntOfPods, bestPods, tenant.Name, c.tsContainer)
-					if c.SnsManager != nil {
-						c.SnsManager.TryToPublishTopology(tenant.Name, time.Now().UnixNano(), tenant.GetPodNames()) // public latest topology into SNS
-					}
-				} else {
-					// unchanged
-
-					// Logger.Infof("[analyzeMetrics] pods unchanged cnt:%v, bestCnt:%v, tenant:%v ", tenant.GetCntOfPods(), bestPods, tenant.Name)
-				}
+				bestPodsInRuleOfCPU, _ = ComputeBestPodsInRuleOfCompute(tenant, cpuusage, minCpuUsageThreshold, maxCpuUsageThreshold)
+				Logger.Infof("[analyzeTaskLoop][%v]ComputeStatisticsOfTenant, Tenant %v , cpu usage: %v %v , PodsCpuMap: %+v bestPodsInRuleOfCPU: %v min_max_cpu_threshold: %v~%v ", tenant.Name, tenant.Name,
+					cpuStats[0].Avg(), cpuStats[0].Cnt(), podCpuMap, bestPodsInRuleOfCPU, minCpuUsageThreshold, maxCpuUsageThreshold)
 			} else {
-				if stats == nil {
+				if cpuStats == nil {
 					Logger.Errorf("[error][analyzeTaskLoop][%v]empty metric: CPU , tenant: %v", tenant.Name, tenant.Name)
 				} else {
 					Logger.Warnf("[analyzeTaskLoop][%v]condition of auto scale haven't not met, metricPodCnt:%v podCnt:%v MinOfPodTimeseriesSize:%v MinOfMetricInterval:%v AutoScaleIntervalSec:%v   ", tenant.Name,
-						tenantMetricDesc.PodCnt, podCnt, tenantMetricDesc.MinOfPodTimeseriesSize, now-tenantMetricDesc.MaxOfPodMinTime, autoScaleIntervalSec)
+						tenantCpuMetricDesc.PodCnt, podCnt, tenantCpuMetricDesc.MinOfPodTimeseriesSize, now-tenantCpuMetricDesc.MaxOfPodMinTime, autoScaleIntervalSec)
 				}
 			}
+			bestPodsInRuleOfOom := -1
+			memoryStats, podMemoryMap, _, _, tenantMemoryMetricDesc := c.AutoScaleMeta.ComputeStatisticsOfTenant(tenant.Name, c.tsContainer, "analyzeMetrics", MetricsTopicMem)
+			if memoryStats != nil && tenantMemoryMetricDesc.MinOfPodTimeseriesSize >= 2 && tenantMemoryMetricDesc.MaxOfPodMinTime < now-int64(autoScaleIntervalSec)+30 {
+				memoryExceedQuotaCount := memoryStats[0].Sum()
+				bestPodsInRuleOfOom, _ = ComputeBestPodsInRuleOfOOM(tenant, memoryExceedQuotaCount)
+				Logger.Infof("[analyzeTaskLoop][%v]ComputeStatisticsOfTenant, Tenant %v , memory exceed quota count: %v %v , PodsMemoryExceedQuotaMap: %+v bestPodsInRuleOfOOM: %v ", tenant.Name, tenant.Name,
+					memoryStats[0].Sum(), memoryStats[0].Cnt(), podMemoryMap, bestPodsInRuleOfOom)
+			} else {
+				if memoryStats == nil {
+					Logger.Errorf("[error][analyzeTaskLoop][%v]empty metric: Memory , tenant: %v", tenant.Name, tenant.Name)
+				} else {
+					Logger.Warnf("[analyzeTaskLoop][%v]condition of auto scale haven't not met, metricPodCnt:%v podCnt:%v MinOfPodTimeseriesSize:%v MinOfMetricInterval:%v AutoScaleIntervalSec:%v   ", tenant.Name,
+						tenantMemoryMetricDesc.PodCnt, podCnt, tenantMemoryMetricDesc.MinOfPodTimeseriesSize, now-tenantMemoryMetricDesc.MaxOfPodMinTime, autoScaleIntervalSec)
+				}
+			}
+			var bestPods int
+			maxScale := MaxInt(bestPodsInRuleOfOom, bestPodsInRuleOfCPU)
+			if maxScale == -1 {
+				bestPods = -1
+			} else if maxScale > cntOfPods {
+				bestPods = maxScale
+			} else if maxScale <= cntOfPods {
+				bestPods = MinInt(bestPodsInRuleOfOom, bestPodsInRuleOfCPU)
+			}
+			if bestPods != -1 && cntOfPods != bestPods {
+				Logger.Infof("[analyzeTaskLoop][%v] resize pods, from %v to  %v , tenant: %v", tenant.Name, tenant.GetCntOfPods(), bestPods, tenant.Name)
+				c.AutoScaleMeta.ResizePodsOfTenant(cntOfPods, bestPods, tenant.Name, c.tsContainer)
+				if c.SnsManager != nil {
+					c.SnsManager.TryToPublishTopology(tenant.Name, time.Now().UnixNano(), tenant.GetPodNames()) // public latest topology into SNS
+				}
+			} else {
+				// unchanged
+
+				// Logger.Infof("[analyzeMetrics] pods unchanged cnt:%v, bestCnt:%v, tenant:%v ", tenant.GetCntOfPods(), bestPods, tenant.Name)
+			}
+
 		}
 
 		Logger.Debugf("[analyzeTaskLoop][%v]round end. tenant: %v , cost %vms", tenant.Name, tenant.Name, time.Now().UnixMilli()-roundBeginTime.UnixMilli())
