@@ -15,7 +15,23 @@ func InitTestEnv() {
 	InitZapLogger()
 }
 
-func TestComputeBestCore3(t *testing.T) {
+func TestComputeBestPodsInRuleOfOOM(t *testing.T) {
+	InitTestEnv()
+	minPods := 1
+	maxPods := 4
+	tenantDesc1 := NewAutoPauseTenantDescWithState("test1", minPods, maxPods, TenantStateResumed, "")
+	tenantDesc1.AppendPod("p1", &PodDesc{Name: "p1"})
+	tenantDesc1.AppendPod("p2", &PodDesc{Name: "p3"})
+	tenantDesc1.AppendPod("p3", &PodDesc{Name: "p3"})
+	target, delta := ComputeBestPodsInRuleOfOOM(tenantDesc1, 1)
+	assertEqual(t, target, 4)
+	assertEqual(t, delta, 1)
+	target, delta = ComputeBestPodsInRuleOfOOM(tenantDesc1, 0)
+	assertEqual(t, target, -1)
+	assertEqual(t, delta, 0)
+}
+
+func TestComputeBestPodsInRuleOfCompute3(t *testing.T) {
 	InitTestEnv()
 	minPods := 1
 	maxPods := 4
@@ -30,7 +46,7 @@ func TestComputeBestCore3(t *testing.T) {
 
 }
 
-func TestComputeBestCore(t *testing.T) {
+func TestComputeBestPodsInRuleOfCompute(t *testing.T) {
 	InitTestEnv()
 	minPods := 1
 	maxPods := 4
@@ -171,16 +187,16 @@ func TestComputeBestCore(t *testing.T) {
 	assertEqual(t, delta <= -1, true)
 }
 
-func TestComputeBestCore2(t *testing.T) {
+func TestComputeBestPodsInRuleOfCompute2(t *testing.T) {
 	InitTestEnv()
 	// testComputeBestCoreCommon(t, 0.8, 0.2)
-	testComputeBestCoreCommon(t, 0.2, 0.8)
-	testComputeBestCoreCommon(t, 0.6, 0.8)
-	testComputeBestCoreCommon(t, 0.0, 0.01)
-	testComputeBestCoreCommon(t, 0.99, 1.0)
+	testComputeBestPodsInRuleOfComputeCommon(t, 0.2, 0.8)
+	testComputeBestPodsInRuleOfComputeCommon(t, 0.6, 0.8)
+	testComputeBestPodsInRuleOfComputeCommon(t, 0.0, 0.01)
+	testComputeBestPodsInRuleOfComputeCommon(t, 0.99, 1.0)
 }
 
-func testComputeBestCoreCommon(t *testing.T, minRatio float64, maxRatio float64) {
+func testComputeBestPodsInRuleOfComputeCommon(t *testing.T, minRatio float64, maxRatio float64) {
 	minPods := 1
 	maxPods := 4
 	// minRatio := float64(0.2)

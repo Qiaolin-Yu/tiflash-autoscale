@@ -445,13 +445,10 @@ func (task *AnalyzeTask) analyzeTaskLoop(c *ClusterManager) {
 				}
 			}
 			var bestPods int
-			maxScale := MaxInt(bestPodsInRuleOfOom, bestPodsInRuleOfCPU)
-			if maxScale == -1 {
-				bestPods = -1
-			} else if maxScale > cntOfPods {
-				bestPods = maxScale
-			} else if maxScale <= cntOfPods {
-				bestPods = MinInt(bestPodsInRuleOfOom, bestPodsInRuleOfCPU)
+			if bestPodsInRuleOfOom == cntOfPods {
+				bestPods = bestPodsInRuleOfCPU
+			} else {
+				bestPods = MaxInt(bestPodsInRuleOfOom, bestPodsInRuleOfCPU)
 			}
 			if bestPods != -1 && cntOfPods != bestPods {
 				Logger.Infof("[analyzeTaskLoop][%v] resize pods, from %v to  %v , tenant: %v", tenant.Name, tenant.GetCntOfPods(), bestPods, tenant.Name)
