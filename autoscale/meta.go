@@ -1,6 +1,7 @@
 package autoscale
 
 import (
+	"context"
 	"fmt"
 	"math"
 	"sort"
@@ -10,6 +11,7 @@ import (
 
 	supervisor "github.com/tikv/pd/supervisor_proto"
 	v1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
 	restclient "k8s.io/client-go/rest"
 )
@@ -25,7 +27,8 @@ const (
 	TenantStatePausing  = 3
 	TenantStateUnknown  = 4
 
-	FailCntCheckTimeWindow = 300 // 300s used for DoPodsPreWarm
+	FailCntCheckTimeWindow  = 300 // 300s used for DoPodsPreWarm
+	ManualDeletePodInterval = 300 // 300s
 )
 
 var (
@@ -43,7 +46,7 @@ var (
 	DefaultScaleIntervalSeconds      = 60
 	HardCodeMaxScaleIntervalSecOfCfg = 3600
 	MaxUnassignWaitTimeSec           = 60
-	PodGcWaitSec                     = 600
+	PodGcWaitSec                     = 60
 	ReadNodeLogUploadS3Bucket        = ""
 )
 
@@ -86,7 +89,9 @@ type PodDesc struct {
 	muOfGrpc        sync.Mutex
 	isStateChanging atomic.Bool
 
-	lastUsedTS int64
+	lastUsedTS         int64
+	phase              atomic.Value //v1.PodPhase
+	lastMunnalDeleteTs int64        // timestamp of last munnally delete pod due to pod phase error, wont race , since it is used by GetSpeicalPodsToDelAndClearExpriedInfo in singe-thread
 	// pod        *v1.Pod
 }
 
@@ -678,6 +683,7 @@ func (p *PrewarmPool) DoPodsWarm(c *ClusterManager) {
 			}
 		}
 	}
+
 	//clean real old pending pods
 	realOldPendingPods := c.AutoScaleMeta.GetRealOldPendingPodCnt() //  call it after p.mu.unlock to avoid deadlock
 	if len(realOldPendingPods) > 0 {
@@ -687,6 +693,19 @@ func (p *PrewarmPool) DoPodsWarm(c *ClusterManager) {
 		Logger.Warnf("[CntOfPending]DoPodsWarm, clean real old pending pods, cnt: %v pods: %+v", len(realOldPendingPods), realOldPendingPods)
 		c.removePods(realOldPendingPods, 2)
 	}
+
+	//delete pods for unexpected reasons
+	speicalPodsToDel, expiredSpecialPodsToDel := c.AutoScaleMeta.GetSpeicalPodsToDelAndClearExpriedInfo()
+	if len(speicalPodsToDel) > 0 || len(expiredSpecialPodsToDel) > 0 {
+		Logger.Warnf("[CntOfPending]DoPodsWarm, delete pods for unexpected or unknown reasons, speicalPodsToDel: %+v expiredSpecialPodsToDel: %+v", speicalPodsToDel, expiredSpecialPodsToDel)
+	}
+	for _, podName := range speicalPodsToDel {
+		err := c.K8sCli.CoreV1().Pods(c.Namespace).Delete(context.TODO(), podName, metav1.DeleteOptions{})
+		if err != nil {
+			Logger.Errorf("[CntOfPending][DoPodsWarm] k8s delete pod failed, pod: %v", podName)
+		}
+	}
+
 	if err != nil {
 		Logger.Errorf("[error][PrewarmPool.DoPodsWarm] error encountered! err:%v", err.Error())
 	}
@@ -784,6 +803,7 @@ type AutoScaleMeta struct {
 	tenantMap  map[string]*TenantDesc
 	PodDescMap map[string]*PodDesc
 	*PrewarmPool
+	SpeicialPodToDelMap sync.Map // string: bool
 
 	k8sCli        *kubernetes.Clientset
 	configManager *ConfigManager
@@ -832,6 +852,10 @@ func (c *AutoScaleMeta) Dump() string {
 	return fmt.Sprintf("tenantcnt:%v, podcnt:%v, warmpool:%v tenants:{%+v}, pods:{%+v} ", len(tenant2PodCntMap), len(pod2ip), c.WarmedPods.GetPodNames(), tenant2PodCntMap, pod2ip)
 }
 
+func (c *AutoScaleMeta) AddSpeicalPodToDel(podname string) {
+	c.SpeicialPodToDelMap.Store(podname, true)
+}
+
 func (c *AutoScaleMeta) GetTenantCnt() int {
 	c.mu.Lock()
 	defer c.mu.Unlock()
@@ -855,6 +879,37 @@ func (c *AutoScaleMeta) GetRealOldPendingPodCnt() []string {
 		}
 	}
 	return ret
+}
+
+func (c *AutoScaleMeta) GetSpeicalPodsToDelAndClearExpriedInfo() ([]string, []string) {
+	podsToDel := make([]string, 0, 5)
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	expriedSpeicalPodsToDel := make([]string, 0, 5)
+	now := time.Now().Unix()
+	c.SpeicialPodToDelMap.Range(func(k, v interface{}) bool {
+		key := k.(string)
+		podDesc, ok := c.PodDescMap[key]
+		if ok {
+			phase := podDesc.phase.Load()
+			if phase != nil && phase != v1.PodPending && phase != v1.PodRunning {
+				if now-podDesc.lastMunnalDeleteTs > ManualDeletePodInterval {
+					podDesc.lastMunnalDeleteTs = now
+					podsToDel = append(podsToDel, key)
+				}
+			} else {
+				expriedSpeicalPodsToDel = append(expriedSpeicalPodsToDel, key)
+			}
+
+		} else {
+			expriedSpeicalPodsToDel = append(expriedSpeicalPodsToDel, key)
+		}
+		return true
+	})
+	for _, key := range expriedSpeicalPodsToDel {
+		c.SpeicialPodToDelMap.Delete(key)
+	}
+	return podsToDel, expriedSpeicalPodsToDel
 }
 
 // checked
@@ -1187,14 +1242,15 @@ func (c *AutoScaleMeta) UpdatePod(pod *v1.Pod) {
 	Logger.Infof("[updatePod] %v cur_ip:%v", name, pod.Status.PodIP)
 	if !ok { // new pod
 		podDesc = &PodDesc{Name: name, IP: pod.Status.PodIP, startTime: time.Now().Unix()}
+		podDesc.phase.Store(pod.Status.Phase)
 		c.PodDescMap[name] = podDesc
-
 		if pod.Status.PodIP != "" {
 			c.addPreWarmFromPending(name, podDesc)
 			Logger.Infof("[UpdatePod]addPreWarmFromPending %v: %v state: unknown", name, pod.Status.PodIP)
 		}
 
 	} else {
+		podDesc.phase.Store(pod.Status.Phase)
 		if podDesc.Name == "" {
 			//TODO handle
 			Logger.Errorf("[UpdatePod]exception case of Pod %v", name)

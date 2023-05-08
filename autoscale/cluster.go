@@ -551,6 +551,13 @@ func (c *ClusterManager) Resume(tenant string) bool {
 	return ret && addPodsResult != -1
 }
 
+func isUnknownPodError(pod *v1.Pod) bool {
+	if pod.Status.PodIP != "" && pod.Status.Phase != v1.PodPending && pod.Status.Phase != v1.PodRunning {
+		return true
+	}
+	return false
+}
+
 // checked
 func (c *ClusterManager) watchPodsLoop(resourceVersion string) {
 	defer c.wg.Done()
@@ -603,6 +610,10 @@ func (c *ClusterManager) watchPodsLoop(resourceVersion string) {
 			case watch.Modified:
 				c.AutoScaleMeta.UpdatePod(pod)
 				MetricOfWatchPodsLoopEventModifiedCnt.Inc()
+				if isUnknownPodError(pod) {
+					Logger.Errorf("[watchPodsLoop][error] unknown pod error, pod: %v type:%v msgid:%v phase:%v reason:%v message:%v", pod.Name, e.Type, msgid, pod.Status.Phase, pod.Status.Reason, pod.Status.Message)
+					c.AutoScaleMeta.AddSpeicalPodToDel(pod.Name)
+				}
 			case watch.Deleted:
 				c.AutoScaleMeta.HandleK8sDelPodEvent(pod.Name)
 				MetricOfWatchPodsLoopEventDeletedCnt.Inc()
@@ -636,6 +647,10 @@ func (c *ClusterManager) loadPods() string {
 	for _, pod := range pods.Items {
 		podSet[pod.Name] = true
 		c.AutoScaleMeta.UpdatePod(&pod)
+		if isUnknownPodError(&pod) {
+			Logger.Errorf("[ClusterManager::loadPods][error] unknown pod error, pod: %v phase:%v reason:%v message:%v", pod.Name, pod.Status.Phase, pod.Status.Reason, pod.Status.Message)
+			c.AutoScaleMeta.AddSpeicalPodToDel(pod.Name)
+		}
 	}
 	c.AutoScaleMeta.TryToRemoveExpriedPod(podSet)
 	return resVer
