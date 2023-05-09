@@ -106,6 +106,7 @@ func (c *DescOfTenantTimeSeries) Init(o *DescOfPodTimeSeries) {
 type SimpleTimeSeries struct {
 	series     *list.List // elem type: TimeValues
 	Statistics []AvgSigma
+	lastStat   []AvgSigma
 	// min_time   int64
 	max_time    int64
 	cap         int // cap = [tenant's scale_interval] / step
@@ -276,6 +277,19 @@ func (c *TimeSeriesContainer) GetStatisticsOfPod(podname string, metricsTopic Me
 	return ret, stats
 }
 
+func (c *TimeSeriesContainer) GetLastStatisticsOfPod(podname string, metricsTopic MetricsTopic) []AvgSigma {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	seriesMap := c.SeriesMap(metricsTopic)
+	v, ok := seriesMap[podname]
+	if !ok {
+		return nil
+	}
+	ret := make([]AvgSigma, CapacityOfStaticsAvgSigma)
+	Merge(ret, v.lastStat)
+	return ret
+}
+
 func (c *TimeSeriesContainer) Dump(podname string, topic MetricsTopic) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
@@ -376,6 +390,9 @@ func (cur *SimpleTimeSeries) append(time int64, values []float64) {
 	} else {
 		cur.max_time = Max(cur.max_time, time)
 	}
+	for i := range cur.Statistics {
+		cur.lastStat[i] = cur.Statistics[i]
+	}
 	Add(cur.Statistics, values)
 	for cur.series.Len() > cur.cap ||
 		(cur.series.Len() > 0 &&
@@ -455,6 +472,7 @@ func (cur *TimeSeriesContainer) commonInsertWithUserCfg(key string, time int64, 
 		val = &SimpleTimeSeries{
 			series:      list.New(),
 			Statistics:  make([]AvgSigma, CapacityOfStaticsAvgSigma),
+			lastStat:    make([]AvgSigma, CapacityOfStaticsAvgSigma),
 			cap:         computeSeriesCapBasedOnIntervalSec(cfgIntervalSec), /// TODO , assign from user's config
 			intervalSec: cfgIntervalSec,
 		}
@@ -721,7 +739,7 @@ func (c *PromClient) QueryMemoryExceedQuota() (map[string]*TimeValPair, error) {
 	v1api := v1.NewAPI(c.cli)
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
-	result, warnings, err := v1api.Query(ctx, "sum by(pod) (increase(tiflash_memory_exceed_quota_count{job=\"kube_sd_tiflash_proc\",metrics_topic=\"tiflash\", pod!=\"\"}[30s]))", time.Now(), v1.WithTimeout(5*time.Second))
+	result, warnings, err := v1api.Query(ctx, "sum by(pod) (max_over_time(tiflash_memory_exceed_quota_count{job=\"kube_sd_tiflash_proc\",metrics_topic=\"tiflash\", pod!=\"\"}[30s]))", time.Now(), v1.WithTimeout(5*time.Second))
 	if err != nil {
 		Logger.Errorf("[error][PromClient] querying Prometheus error: %v", err)
 		return nil, err
