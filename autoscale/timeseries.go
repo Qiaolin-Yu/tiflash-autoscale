@@ -258,36 +258,25 @@ func NewTimeSeriesContainer() *TimeSeriesContainer {
 }
 
 // checked
-func (c *TimeSeriesContainer) GetStatisticsOfPod(podname string, metricsTopic MetricsTopic) ([]AvgSigma, *DescOfPodTimeSeries) {
+func (c *TimeSeriesContainer) GetStatisticsOfPod(podname string, metricsTopic MetricsTopic) ([]AvgSigma, []AvgSigma, *DescOfPodTimeSeries) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	seriesMap := c.SeriesMap(metricsTopic)
 	v, ok := seriesMap[podname]
 	if !ok {
-		return nil, nil
+		return nil, nil, nil
 	}
-	ret := make([]AvgSigma, CapacityOfStaticsAvgSigma)
-	Merge(ret, v.Statistics)
+	stat := make([]AvgSigma, CapacityOfStaticsAvgSigma)
+	Merge(stat, v.Statistics)
+	lastStat := make([]AvgSigma, CapacityOfStaticsAvgSigma)
+	Merge(lastStat, v.lastStat)
 	minT, maxT := v.getMinMaxTime()
-	stats := &DescOfPodTimeSeries{
+	descOfPodTimeSeries := &DescOfPodTimeSeries{
 		MinTime: minT,
 		MaxTime: maxT,
 		Size:    v.series.Len(),
 	}
-	return ret, stats
-}
-
-func (c *TimeSeriesContainer) GetLastStatisticsOfPod(podname string, metricsTopic MetricsTopic) []AvgSigma {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	seriesMap := c.SeriesMap(metricsTopic)
-	v, ok := seriesMap[podname]
-	if !ok {
-		return nil
-	}
-	ret := make([]AvgSigma, CapacityOfStaticsAvgSigma)
-	Merge(ret, v.lastStat)
-	return ret
+	return stat, lastStat, descOfPodTimeSeries
 }
 
 func (c *TimeSeriesContainer) Dump(podname string, topic MetricsTopic) {

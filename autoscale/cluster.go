@@ -152,7 +152,7 @@ func (c *ClusterManager) initRangeMetricsFromPromethues(intervalSec int) error {
 	tsContainer.DumpAll(MetricsTopicCpu)
 	tArr := c.AutoScaleMeta.GetTenantNames()
 	for _, tName := range tArr {
-		stats, podCpuMap, podPointCntMap, _, _ := as_meta.ComputeStatisticsOfTenant(tName, tsContainer, "collectMetrics", MetricsTopicCpu)
+		stats, _, podCpuMap, podPointCntMap, _, _ := as_meta.ComputeStatisticsOfTenant(tName, tsContainer, "collectMetrics", MetricsTopicCpu)
 		Logger.Infof("[initRangeMetricsFromPromethues]Tenant %v statistics: cpu: %v %v mem: %v %v, cpuMap:%+v valPointMap:%+v ", tName,
 			stats[0].Avg(),
 			stats[0].Cnt(),
@@ -275,7 +275,7 @@ func (c *ClusterManager) collectMetricsLoop(metricsTopic MetricsTopic, fromMetri
 		// just print tenant's avg metrics
 		tArr := c.AutoScaleMeta.GetTenantNames()
 		for _, tName := range tArr {
-			stats, _, _, _, _ := as_meta.ComputeStatisticsOfTenant(tName, tsContainer, "collectTaskCntMetricsFromPromethues", metricsTopic)
+			stats, lastStats, _, _, _, _ := as_meta.ComputeStatisticsOfTenant(tName, tsContainer, "collectTaskCntMetricsFromPromethues", metricsTopic)
 			if stats != nil {
 				var statVal float64
 				if metricsTopic == MetricsTopicCpu {
@@ -283,7 +283,7 @@ func (c *ClusterManager) collectMetricsLoop(metricsTopic MetricsTopic, fromMetri
 				} else if metricsTopic == MetricsTopicTaskCnt {
 					statVal = stats[0].Sum()
 				} else if metricsTopic == MetricsTopicMem {
-					statVal = stats[0].Sum()
+					statVal = stats[0].Sum() - lastStats[0].Sum()
 				} else {
 					panic(fmt.Errorf("unknown MetricsTopic#3:%v", metricsTopic))
 				}
@@ -376,7 +376,7 @@ func (task *AnalyzeTask) analyzeTaskLoop(c *ClusterManager) {
 		// Auto Pause
 		autoPauseIntervalSec := tenant.GetAutoPauseIntervalSec()
 		if autoPauseIntervalSec != 0 { // if auto-pause is on
-			taskCntStats, _, _, _, tenantMetricDesc := c.AutoScaleMeta.ComputeStatisticsOfTenant(tenant.Name, c.tsContainer, "AutoPauseAnalytics", MetricsTopicTaskCnt)
+			taskCntStats, _, _, _, _, tenantMetricDesc := c.AutoScaleMeta.ComputeStatisticsOfTenant(tenant.Name, c.tsContainer, "AutoPauseAnalytics", MetricsTopicTaskCnt)
 			if taskCntStats != nil {
 				// autoPauseIntervalSec := tenant.GetAutoPauseIntervalSec()
 				now := time.Now().Unix()
@@ -406,7 +406,7 @@ func (task *AnalyzeTask) analyzeTaskLoop(c *ClusterManager) {
 				c.SnsManager.TryToPublishTopology(tenant.Name, time.Now().UnixNano(), tenant.GetPodNames()) // public latest topology into SNS
 			}
 		} else {
-			cpuStats, podCpuMap, _, _, tenantCpuMetricDesc := c.AutoScaleMeta.ComputeStatisticsOfTenant(tenant.Name, c.tsContainer, "analyzeMetrics", MetricsTopicCpu)
+			cpuStats, _, podCpuMap, _, _, tenantCpuMetricDesc := c.AutoScaleMeta.ComputeStatisticsOfTenant(tenant.Name, c.tsContainer, "analyzeMetrics", MetricsTopicCpu)
 			/// TODO use tenantCpuMetricDesc to check preCondition of auto scale of this tenant
 			autoScaleIntervalSec := tenant.GetScaleIntervalSec()
 			now := time.Now().Unix()
@@ -430,10 +430,11 @@ func (task *AnalyzeTask) analyzeTaskLoop(c *ClusterManager) {
 				}
 			}
 			bestPodsInRuleOfOom := -1
-			memoryStats, podMemoryMap, _, _, tenantMemoryMetricDesc := c.AutoScaleMeta.ComputeStatisticsOfTenant(tenant.Name, c.tsContainer, "analyzeMetrics", MetricsTopicMem)
-			if memoryStats != nil && tenantMemoryMetricDesc.MinOfPodTimeseriesSize >= 2 && tenantMemoryMetricDesc.MaxOfPodMinTime < now-int64(autoScaleIntervalSec)+30 {
-				memoryExceedQuotaCount := memoryStats[0].Sum()
-				bestPodsInRuleOfOom, _ = ComputeBestPodsInRuleOfOOM(tenant, memoryExceedQuotaCount)
+			//TODO
+			memoryStats, memoryLastStats, podMemoryMap, _, _, tenantMemoryMetricDesc := c.AutoScaleMeta.ComputeStatisticsOfTenant(tenant.Name, c.tsContainer, "analyzeMetrics", MetricsTopicMem)
+			if memoryStats != nil && memoryStats[0].Cnt() == memoryLastStats[0].Cnt() && tenantMemoryMetricDesc.MinOfPodTimeseriesSize >= 2 && tenantMemoryMetricDesc.MaxOfPodMinTime < now-int64(autoScaleIntervalSec)+30 {
+				memoryExceedQuotaIncreaseCount := memoryStats[0].Sum() - memoryLastStats[0].Sum()
+				bestPodsInRuleOfOom, _ = ComputeBestPodsInRuleOfOOM(tenant, memoryExceedQuotaIncreaseCount)
 				Logger.Infof("[analyzeTaskLoop][%v]ComputeStatisticsOfTenant, Tenant %v , memory exceed quota count: %v %v , PodsMemoryExceedQuotaMap: %+v bestPodsInRuleOfOOM: %v ", tenant.Name, tenant.Name,
 					memoryStats[0].Sum(), memoryStats[0].Cnt(), podMemoryMap, bestPodsInRuleOfOom)
 			} else {
