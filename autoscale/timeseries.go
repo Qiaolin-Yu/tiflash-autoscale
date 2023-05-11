@@ -420,9 +420,9 @@ type TimeSeriesWriter interface {
 type MetricsTopic int
 
 const (
-	MetricsTopicCpu     = MetricsTopic(0)
-	MetricsTopicTaskCnt = MetricsTopic(1)
-	MetricsTopicMem     = MetricsTopic(2)
+	MetricsTopicCpu                 = MetricsTopic(0)
+	MetricsTopicTaskCnt             = MetricsTopic(1)
+	MetricsTopicMemQuotaExceededCnt = MetricsTopic(2)
 )
 
 func (c *MetricsTopic) String() string {
@@ -441,7 +441,7 @@ func (cur *TimeSeriesContainer) SeriesMap(metricsTopic MetricsTopic) map[string]
 		return cur.seriesMap
 	} else if metricsTopic == MetricsTopicTaskCnt {
 		return cur.taskCntSeriesMap
-	} else if metricsTopic == MetricsTopicMem {
+	} else if metricsTopic == MetricsTopicMemQuotaExceededCnt {
 		return cur.memoryExceedQuotaSeriesMap
 	} else {
 		panic(fmt.Errorf("unknown MetricsTopicCpu:%v", metricsTopic))

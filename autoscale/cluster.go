@@ -172,7 +172,7 @@ func (c *ClusterManager) collectTaskCntMetricsFromPromethuesLoop() {
 }
 
 func (c *ClusterManager) collectMemoryExceedQuotaMetricsFromPromethuesLoop() {
-	c.collectMetricsLoop(MetricsTopicMem, false)
+	c.collectMetricsLoop(MetricsTopicMemQuotaExceededCnt, false)
 }
 
 // checked
@@ -217,7 +217,7 @@ func (c *ClusterManager) collectMetricsLoop(metricsTopic MetricsTopic, fromMetri
 			}
 		} else if metricsTopic == MetricsTopicTaskCnt {
 			metricOfPods, err = c.PromClient.QueryComputeTask()
-		} else if metricsTopic == MetricsTopicMem {
+		} else if metricsTopic == MetricsTopicMemQuotaExceededCnt {
 			metricOfPods, err = c.PromClient.QueryMemoryExceedQuota()
 		} else {
 			panic(fmt.Errorf("unknown MetricsTopic:%v", metricsTopic))
@@ -241,7 +241,7 @@ func (c *ClusterManager) collectMetricsLoop(metricsTopic MetricsTopic, fromMetri
 				Logger.Errorf("[error][collectMetrics]tenantdesc is nil, tenant:%v", tenantName)
 				continue
 			}
-			if metricsTopic == MetricsTopicCpu || metricsTopic == MetricsTopicMem {
+			if metricsTopic == MetricsTopicCpu || metricsTopic == MetricsTopicMemQuotaExceededCnt {
 				tsContainer.InsertWithUserCfg(podName, metric.time,
 					[]float64{
 						metric.value,
@@ -282,7 +282,7 @@ func (c *ClusterManager) collectMetricsLoop(metricsTopic MetricsTopic, fromMetri
 					statVal = stats[0].Avg()
 				} else if metricsTopic == MetricsTopicTaskCnt {
 					statVal = stats[0].Sum()
-				} else if metricsTopic == MetricsTopicMem {
+				} else if metricsTopic == MetricsTopicMemQuotaExceededCnt {
 					statVal = stats[0].Sum() - lastStats[0].Sum()
 				} else {
 					panic(fmt.Errorf("unknown MetricsTopic#3:%v", metricsTopic))
@@ -431,15 +431,15 @@ func (task *AnalyzeTask) analyzeTaskLoop(c *ClusterManager) {
 			}
 			bestPodsInRuleOfOom := -1
 			//TODO
-			memoryStats, memoryLastStats, podMemoryMap, _, _, tenantMemoryMetricDesc := c.AutoScaleMeta.ComputeStatisticsOfTenant(tenant.Name, c.tsContainer, "analyzeMetrics", MetricsTopicMem)
-			if memoryStats != nil && memoryStats[0].Cnt() == memoryLastStats[0].Cnt() && tenantMemoryMetricDesc.MinOfPodTimeseriesSize >= 2 && tenantMemoryMetricDesc.MaxOfPodMinTime < now-int64(autoScaleIntervalSec)+30 {
-				memoryExceedQuotaIncreaseCount := memoryStats[0].Sum() - memoryLastStats[0].Sum()
+			memQuotaExceededStats, memQuotaExceededLastStats, podMemQuotaExceededMap, _, _, tenantMemoryMetricDesc := c.AutoScaleMeta.ComputeStatisticsOfTenant(tenant.Name, c.tsContainer, "analyzeMetrics", MetricsTopicMemQuotaExceededCnt)
+			if memQuotaExceededStats != nil && memQuotaExceededStats[0].Cnt() == memQuotaExceededLastStats[0].Cnt() && tenantMemoryMetricDesc.MinOfPodTimeseriesSize >= 2 && tenantMemoryMetricDesc.MaxOfPodMinTime < now-int64(autoScaleIntervalSec)+30 {
+				memoryExceedQuotaIncreaseCount := memQuotaExceededStats[0].Sum() - memQuotaExceededLastStats[0].Sum()
 				bestPodsInRuleOfOom, _ = ComputeBestPodsInRuleOfOOM(tenant, memoryExceedQuotaIncreaseCount)
 				Logger.Infof("[analyzeTaskLoop][%v]ComputeStatisticsOfTenant, Tenant %v , memory exceed quota count: %v %v , PodsMemoryExceedQuotaMap: %+v bestPodsInRuleOfOOM: %v ", tenant.Name, tenant.Name,
-					memoryStats[0].Sum(), memoryStats[0].Cnt(), podMemoryMap, bestPodsInRuleOfOom)
+					memQuotaExceededStats[0].Sum(), memQuotaExceededStats[0].Cnt(), podMemQuotaExceededMap, bestPodsInRuleOfOom)
 			} else {
-				if memoryStats == nil {
-					Logger.Errorf("[error][analyzeTaskLoop][%v]empty metric: Memory , tenant: %v", tenant.Name, tenant.Name)
+				if memQuotaExceededStats == nil {
+					Logger.Errorf("[error][analyzeTaskLoop][%v]empty metric: MemoryExceedQuota , tenant: %v", tenant.Name, tenant.Name)
 				} else {
 					Logger.Warnf("[analyzeTaskLoop][%v]condition of auto scale haven't not met, metricPodCnt:%v podCnt:%v MinOfPodTimeseriesSize:%v MinOfMetricInterval:%v AutoScaleIntervalSec:%v   ", tenant.Name,
 						tenantMemoryMetricDesc.PodCnt, podCnt, tenantMemoryMetricDesc.MinOfPodTimeseriesSize, now-tenantMemoryMetricDesc.MaxOfPodMinTime, autoScaleIntervalSec)
