@@ -106,7 +106,7 @@ func (c *DescOfTenantTimeSeries) Init(o *DescOfPodTimeSeries) {
 type SimpleTimeSeries struct {
 	series     *list.List // elem type: TimeValues
 	Statistics []AvgSigma
-	lastStat   []AvgSigma
+	lastStats  []AvgSigma
 	// min_time   int64
 	max_time    int64
 	cap         int // cap = [tenant's scale_interval] / step
@@ -158,6 +158,13 @@ func (c *SimpleTimeSeries) ValsOfMetric() *AvgSigma {
 
 func (c *SimpleTimeSeries) SecondMetricVals() *AvgSigma {
 	return &c.Statistics[1]
+}
+
+func (c *SimpleTimeSeries) HasPositiveDelta() bool {
+	if c.Statistics[0].Cnt() != c.lastStats[0].Cnt() {
+		return false
+	}
+	return c.Statistics[0].Sum() > c.lastStats[0].Sum()
 }
 
 func (cur *AvgSigma) Reset() {
@@ -258,25 +265,34 @@ func NewTimeSeriesContainer() *TimeSeriesContainer {
 }
 
 // checked
-func (c *TimeSeriesContainer) GetStatisticsOfPod(podname string, metricsTopic MetricsTopic) ([]AvgSigma, []AvgSigma, *DescOfPodTimeSeries) {
+func (c *TimeSeriesContainer) GetStatisticsOfPod(podname string, metricsTopic MetricsTopic) ([]AvgSigma, *DescOfPodTimeSeries) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	seriesMap := c.SeriesMap(metricsTopic)
 	v, ok := seriesMap[podname]
 	if !ok {
-		return nil, nil, nil
+		return nil, nil
 	}
 	stat := make([]AvgSigma, CapacityOfStaticsAvgSigma)
 	Merge(stat, v.Statistics)
-	lastStat := make([]AvgSigma, CapacityOfStaticsAvgSigma)
-	Merge(lastStat, v.lastStat)
 	minT, maxT := v.getMinMaxTime()
 	descOfPodTimeSeries := &DescOfPodTimeSeries{
 		MinTime: minT,
 		MaxTime: maxT,
 		Size:    v.series.Len(),
 	}
-	return stat, lastStat, descOfPodTimeSeries
+	return stat, descOfPodTimeSeries
+}
+
+func (c *TimeSeriesContainer) StatisticsOfPodHasPositiveDelta(podname string, metricsTopic MetricsTopic) bool {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	seriesMap := c.SeriesMap(metricsTopic)
+	v, ok := seriesMap[podname]
+	if !ok {
+		return false
+	}
+	return v.HasPositiveDelta()
 }
 
 func (c *TimeSeriesContainer) Dump(podname string, topic MetricsTopic) {
@@ -380,7 +396,7 @@ func (cur *SimpleTimeSeries) append(time int64, values []float64) {
 		cur.max_time = Max(cur.max_time, time)
 	}
 	for i := range cur.Statistics {
-		cur.lastStat[i] = cur.Statistics[i]
+		cur.lastStats[i] = cur.Statistics[i]
 	}
 	Add(cur.Statistics, values)
 	for cur.series.Len() > cur.cap ||
@@ -461,7 +477,7 @@ func (cur *TimeSeriesContainer) commonInsertWithUserCfg(key string, time int64, 
 		val = &SimpleTimeSeries{
 			series:      list.New(),
 			Statistics:  make([]AvgSigma, CapacityOfStaticsAvgSigma),
-			lastStat:    make([]AvgSigma, CapacityOfStaticsAvgSigma),
+			lastStats:   make([]AvgSigma, CapacityOfStaticsAvgSigma),
 			cap:         computeSeriesCapBasedOnIntervalSec(cfgIntervalSec), /// TODO , assign from user's config
 			intervalSec: cfgIntervalSec,
 		}

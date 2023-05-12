@@ -117,16 +117,16 @@ func ComputeBestPodsInRuleOfCompute(tenantDesc *TenantDesc, cpuUsageCoresPerPod 
 	}
 }
 
-// ComputeBestPodsInRuleOfOOM TODO @Qiaolin_Yu
-func ComputeBestPodsInRuleOfOOM(tenantDesc *TenantDesc, memoryExceedQuotaIncreaseCount float64) (int, int /*delta*/) {
+// ComputeBestPodsInRuleOfOOM
+func ComputeBestPodsInRuleOfOOM(tenantDesc *TenantDesc, hasPositiveDelta bool) (int, int /*delta*/) {
 	if tenantDesc == nil {
 		Logger.Infof("[ComputeBestPodsInRuleOfOOM]tenantDesc == nil")
 		return -1, 0
 	}
 	tenantname := tenantDesc.Name
 	oldCntOfPods := tenantDesc.GetCntOfPods()
-	if memoryExceedQuotaIncreaseCount > 0 {
-		Logger.Infof("[ComputeBestPodsInRuleOfOOM][%v]case#1: memoryExceedQuotaIncreaseCount > 0, %v", tenantname, memoryExceedQuotaIncreaseCount)
+	if hasPositiveDelta {
+		Logger.Infof("[ComputeBestPodsInRuleOfOOM][%v]case#1: hasPositiveDelta: %v", tenantname, hasPositiveDelta)
 		return oldCntOfPods + 1, 1
 	} else {
 		return -1, 0

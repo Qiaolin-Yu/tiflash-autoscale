@@ -23,10 +23,10 @@ func TestComputeBestPodsInRuleOfOOM(t *testing.T) {
 	tenantDesc1.AppendPod("p1", &PodDesc{Name: "p1"})
 	tenantDesc1.AppendPod("p2", &PodDesc{Name: "p3"})
 	tenantDesc1.AppendPod("p3", &PodDesc{Name: "p3"})
-	target, delta := ComputeBestPodsInRuleOfOOM(tenantDesc1, 1)
+	target, delta := ComputeBestPodsInRuleOfOOM(tenantDesc1, true)
 	assertEqual(t, target, 4)
 	assertEqual(t, delta, 1)
-	target, delta = ComputeBestPodsInRuleOfOOM(tenantDesc1, 0)
+	target, delta = ComputeBestPodsInRuleOfOOM(tenantDesc1, false)
 	assertEqual(t, target, -1)
 	assertEqual(t, delta, 0)
 }

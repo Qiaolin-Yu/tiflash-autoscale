@@ -1739,13 +1739,13 @@ func (c *AutoScaleMeta) TryToRemoveTenant(tenant string) bool {
 }
 
 // checked
-func (c *AutoScaleMeta) ComputeStatisticsOfTenant(tenantName string, tsc *TimeSeriesContainer, caller string, metricsTopic MetricsTopic) ([]AvgSigma, []AvgSigma, map[string]float64 /* avg_map */, map[string]int64 /* cnt_map*/, map[string]*DescOfPodTimeSeries, *DescOfTenantTimeSeries) {
+func (c *AutoScaleMeta) ComputeStatisticsOfTenant(tenantName string, tsc *TimeSeriesContainer, caller string, metricsTopic MetricsTopic) ([]AvgSigma, map[string]float64 /* avg_map */, map[string]int64 /* cnt_map*/, map[string]*DescOfPodTimeSeries, *DescOfTenantTimeSeries) {
 	c.mu.Lock()
 
 	tenantDesc, ok := c.tenantMap[tenantName]
 	if !ok {
 		c.mu.Unlock()
-		return nil, nil, nil, nil, nil, nil
+		return nil, nil, nil, nil, nil
 	} else {
 		podsOfTenant := tenantDesc.GetPodNames()
 		c.mu.Unlock()
@@ -1753,14 +1753,13 @@ func (c *AutoScaleMeta) ComputeStatisticsOfTenant(tenantName string, tsc *TimeSe
 		podPointCntMap := make(map[string]int64)
 		descOfTimeSeriesMap := make(map[string]*DescOfPodTimeSeries)
 		retStats := make([]AvgSigma, CapacityOfStaticsAvgSigma)
-		retLastStats := make([]AvgSigma, CapacityOfStaticsAvgSigma)
 		var metricDescOfTenant DescOfTenantTimeSeries
 		for _, podName := range podsOfTenant {
 
 			// // FOR DEBUG
 			tsc.Dump(podName, metricsTopic)
 
-			statsOfPod, lastStats, descOfTimeSeries := tsc.GetStatisticsOfPod(podName, metricsTopic)
+			statsOfPod, descOfTimeSeries := tsc.GetStatisticsOfPod(podName, metricsTopic)
 			if statsOfPod == nil {
 				statsOfPod = make([]AvgSigma, CapacityOfStaticsAvgSigma)
 				dummyTime := time.Now().Unix() + 86400
@@ -1769,9 +1768,6 @@ func (c *AutoScaleMeta) ComputeStatisticsOfTenant(tenantName string, tsc *TimeSe
 					MaxTime: dummyTime,
 					Size:    0,
 				}
-			}
-			if lastStats == nil {
-				lastStats = make([]AvgSigma, CapacityOfStaticsAvgSigma)
 			}
 
 			if metricDescOfTenant.PodCnt == 0 {
@@ -1797,10 +1793,33 @@ func (c *AutoScaleMeta) ComputeStatisticsOfTenant(tenantName string, tsc *TimeSe
 				// Logger.Infof("[debug]avg cpu of pod %v : %v, %v", podName, statsOfPod[0].Avg(), statsOfPod[0].Cnt())
 			}
 			Merge(retStats, statsOfPod)
-			Merge(retLastStats, lastStats)
 
 		}
-		return retStats, retLastStats, podCpuMap, podPointCntMap, descOfTimeSeriesMap, &metricDescOfTenant
+		return retStats, podCpuMap, podPointCntMap, descOfTimeSeriesMap, &metricDescOfTenant
+	}
+}
+
+func (c *AutoScaleMeta) StatisticsOfTenantHasPositiveDelta(tenantName string, tsc *TimeSeriesContainer, caller string, metricsTopic MetricsTopic) bool {
+	c.mu.Lock()
+
+	tenantDesc, ok := c.tenantMap[tenantName]
+	if !ok {
+		c.mu.Unlock()
+		return false
+	} else {
+		podsOfTenant := tenantDesc.GetPodNames()
+		c.mu.Unlock()
+		for _, podName := range podsOfTenant {
+
+			// // FOR DEBUG
+			tsc.Dump(podName, metricsTopic)
+
+			hasPositiveDelta := tsc.StatisticsOfPodHasPositiveDelta(podName, metricsTopic)
+			if hasPositiveDelta {
+				return true
+			}
+		}
+		return false
 	}
 }
 
