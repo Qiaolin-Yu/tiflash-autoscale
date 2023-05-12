@@ -160,11 +160,11 @@ func (c *SimpleTimeSeries) SecondMetricVals() *AvgSigma {
 	return &c.Statistics[1]
 }
 
-func (c *SimpleTimeSeries) HasPositiveDelta() bool {
+func (c *SimpleTimeSeries) ComputeDelta() float64 {
 	if c.Statistics[0].Cnt() != c.lastStats[0].Cnt() {
-		return false
+		return 0
 	}
-	return c.Statistics[0].Sum() > c.lastStats[0].Sum()
+	return c.Statistics[0].Sum() - c.lastStats[0].Sum()
 }
 
 func (cur *AvgSigma) Reset() {
@@ -284,15 +284,15 @@ func (c *TimeSeriesContainer) GetStatisticsOfPod(podname string, metricsTopic Me
 	return stat, descOfPodTimeSeries
 }
 
-func (c *TimeSeriesContainer) StatisticsOfPodHasPositiveDelta(podname string, metricsTopic MetricsTopic) bool {
+func (c *TimeSeriesContainer) GetStatisticsDeltaOfPod(podname string, metricsTopic MetricsTopic) float64 {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	seriesMap := c.SeriesMap(metricsTopic)
 	v, ok := seriesMap[podname]
 	if !ok {
-		return false
+		return 0
 	}
-	return v.HasPositiveDelta()
+	return v.ComputeDelta()
 }
 
 func (c *TimeSeriesContainer) Dump(podname string, topic MetricsTopic) {

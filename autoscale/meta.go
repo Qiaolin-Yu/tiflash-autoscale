@@ -1799,27 +1799,25 @@ func (c *AutoScaleMeta) ComputeStatisticsOfTenant(tenantName string, tsc *TimeSe
 	}
 }
 
-func (c *AutoScaleMeta) StatisticsOfTenantHasPositiveDelta(tenantName string, tsc *TimeSeriesContainer, caller string, metricsTopic MetricsTopic) bool {
+func (c *AutoScaleMeta) ComputeStatisticsDeltaOfTenant(tenantName string, tsc *TimeSeriesContainer, caller string, metricsTopic MetricsTopic) float64 {
 	c.mu.Lock()
 
 	tenantDesc, ok := c.tenantMap[tenantName]
 	if !ok {
 		c.mu.Unlock()
-		return false
+		return 0
 	} else {
 		podsOfTenant := tenantDesc.GetPodNames()
 		c.mu.Unlock()
+		var ret float64
 		for _, podName := range podsOfTenant {
 
 			// // FOR DEBUG
 			tsc.Dump(podName, metricsTopic)
 
-			hasPositiveDelta := tsc.StatisticsOfPodHasPositiveDelta(podName, metricsTopic)
-			if hasPositiveDelta {
-				return true
-			}
+			ret += tsc.GetStatisticsDeltaOfPod(podName, metricsTopic)
 		}
-		return false
+		return ret
 	}
 }
 

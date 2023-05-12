@@ -276,7 +276,7 @@ func (c *ClusterManager) collectMetricsLoop(metricsTopic MetricsTopic, fromMetri
 		tArr := c.AutoScaleMeta.GetTenantNames()
 		for _, tName := range tArr {
 			stats, _, _, _, _ := as_meta.ComputeStatisticsOfTenant(tName, tsContainer, "collectTaskCntMetricsFromPromethues", metricsTopic)
-			hasPositiveDelta := as_meta.StatisticsOfTenantHasPositiveDelta(tName, tsContainer, "collectTaskCntMetricsFromPromethues", metricsTopic)
+			statsDelta := as_meta.ComputeStatisticsDeltaOfTenant(tName, tsContainer, "collectTaskCntMetricsFromPromethues", metricsTopic)
 			if stats != nil {
 				var statVal float64
 				if metricsTopic == MetricsTopicCpu {
@@ -284,26 +284,16 @@ func (c *ClusterManager) collectMetricsLoop(metricsTopic MetricsTopic, fromMetri
 				} else if metricsTopic == MetricsTopicTaskCnt {
 					statVal = stats[0].Sum()
 				} else if metricsTopic == MetricsTopicMemQuotaExceededCnt {
-					statVal = stats[0].Sum()
+					statVal = statsDelta
 				} else {
 					panic(fmt.Errorf("unknown MetricsTopic#3:%v", metricsTopic))
 				}
-				if metricsTopic == MetricsTopicMemQuotaExceededCnt {
-					Logger.Infof("[collectMetrics]metricsTopic:%v Tenant %v statistics: hasPositiveDelta, cnt: %v %v time_range:%v~%v",
-						metricsTopic.String(), tName,
-						hasPositiveDelta,
-						stats[0].Cnt(),
-						mint, maxt,
-					)
-				} else {
-					Logger.Infof("[collectMetrics]metricsTopic:%v Tenant %v statistics: val, cnt: %v %v time_range:%v~%v",
-						metricsTopic.String(), tName,
-						statVal,
-						stats[0].Cnt(),
-						mint, maxt,
-					)
-				}
-
+				Logger.Infof("[collectMetrics]metricsTopic:%v Tenant %v statistics: val, cnt: %v %v time_range:%v~%v",
+					metricsTopic.String(), tName,
+					statVal,
+					stats[0].Cnt(),
+					mint, maxt,
+				)
 			} else {
 				Logger.Infof("[collectMetrics]ComputeStatisticsOfTenant: stats is nil! metricsTopic:%v tenant:%v ",
 					metricsTopic.String(), tName)
@@ -443,9 +433,9 @@ func (task *AnalyzeTask) analyzeTaskLoop(c *ClusterManager) {
 			bestPodsInRuleOfOom := -1
 			//TODO
 			memQuotaExceededStats, podMemQuotaExceededMap, _, _, tenantMemoryMetricDesc := c.AutoScaleMeta.ComputeStatisticsOfTenant(tenant.Name, c.tsContainer, "analyzeMetrics", MetricsTopicMemQuotaExceededCnt)
-			hasPositiveDelta := c.AutoScaleMeta.StatisticsOfTenantHasPositiveDelta(tenant.Name, c.tsContainer, "analyzeMetrics", MetricsTopicMemQuotaExceededCnt)
+			statsDelta := c.AutoScaleMeta.ComputeStatisticsDeltaOfTenant(tenant.Name, c.tsContainer, "analyzeMetrics", MetricsTopicMemQuotaExceededCnt)
 			if memQuotaExceededStats != nil && tenantMemoryMetricDesc.MinOfPodTimeseriesSize >= 2 && tenantMemoryMetricDesc.MaxOfPodMinTime < now-int64(autoScaleIntervalSec)+30 {
-				bestPodsInRuleOfOom, _ = ComputeBestPodsInRuleOfOOM(tenant, hasPositiveDelta)
+				bestPodsInRuleOfOom, _ = ComputeBestPodsInRuleOfOOM(tenant, statsDelta)
 				Logger.Infof("[analyzeTaskLoop][%v]ComputeStatisticsOfTenant, Tenant %v , memory exceed quota count: %v %v , PodsMemoryExceedQuotaMap: %+v bestPodsInRuleOfOOM: %v ", tenant.Name, tenant.Name,
 					memQuotaExceededStats[0].Sum(), memQuotaExceededStats[0].Cnt(), podMemQuotaExceededMap, bestPodsInRuleOfOom)
 			} else {
