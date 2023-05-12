@@ -799,9 +799,10 @@ func (p *PrewarmPool) putWarmedPod(fromTenantName string, pod *PodDesc, isNewPod
 }
 
 type AutoScaleMeta struct {
-	mu         sync.Mutex //TODO use RwMutex
-	tenantMap  map[string]*TenantDesc
-	PodDescMap map[string]*PodDesc
+	mu                                     sync.Mutex //TODO use RwMutex
+	tenantMap                              map[string]*TenantDesc
+	tenantLastTimeOfScaleOutCausedByOOMMap map[string]int64
+	PodDescMap                             map[string]*PodDesc
 	*PrewarmPool
 	SpeicialPodToDelMap sync.Map // string: bool
 
@@ -820,11 +821,12 @@ func NewAutoScaleMeta(k8sConfig *restclient.Config, configManager *ConfigManager
 	}
 	ret := &AutoScaleMeta{
 		// Pod2tenant: make(map[string]string),
-		tenantMap:     make(map[string]*TenantDesc),
-		PodDescMap:    make(map[string]*PodDesc),
-		PrewarmPool:   NewPrewarmPool(NewAutoPauseTenantDescWithState("", 0, PrewarmPoolCap, TenantStateResumed, "")),
-		k8sCli:        client,
-		configManager: configManager,
+		tenantMap:                              make(map[string]*TenantDesc),
+		PodDescMap:                             make(map[string]*PodDesc),
+		tenantLastTimeOfScaleOutCausedByOOMMap: make(map[string]int64),
+		PrewarmPool:                            NewPrewarmPool(NewAutoPauseTenantDescWithState("", 0, PrewarmPoolCap, TenantStateResumed, "")),
+		k8sCli:                                 client,
+		configManager:                          configManager,
 	}
 	if UseSpecialTenantAsFixPool {
 		ret.setupManualPauseMockTenant(SpecialTenantNameForFixPool, 1, 1, false, 300, nil)
@@ -854,6 +856,22 @@ func (c *AutoScaleMeta) Dump() string {
 
 func (c *AutoScaleMeta) AddSpeicalPodToDel(podname string) {
 	c.SpeicialPodToDelMap.Store(podname, true)
+}
+
+func (c *AutoScaleMeta) GetLastTimeScaleOutCausedByOOMOfTenant(podname string) int64 {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	ret, ok := c.tenantLastTimeOfScaleOutCausedByOOMMap[podname]
+	if !ok {
+		return 0
+	}
+	return ret
+}
+
+func (c *AutoScaleMeta) SetLastTimeScaleOutCausedByOOMOfTenant(podname string) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.tenantLastTimeOfScaleOutCausedByOOMMap[podname] = time.Now().Unix()
 }
 
 func (c *AutoScaleMeta) GetTenantCnt() int {

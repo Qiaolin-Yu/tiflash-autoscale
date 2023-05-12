@@ -431,13 +431,13 @@ func (task *AnalyzeTask) analyzeTaskLoop(c *ClusterManager) {
 				}
 			}
 			bestPodsInRuleOfOom := -1
-			//TODO
 			memQuotaExceededStats, podMemQuotaExceededMap, _, _, tenantMemoryMetricDesc := c.AutoScaleMeta.ComputeStatisticsOfTenant(tenant.Name, c.tsContainer, "analyzeMetrics", MetricsTopicMemQuotaExceededCnt)
 			statsDelta := c.AutoScaleMeta.ComputeStatisticsDeltaOfTenant(tenant.Name, c.tsContainer, "analyzeMetrics", MetricsTopicMemQuotaExceededCnt)
-			if memQuotaExceededStats != nil && tenantMemoryMetricDesc.MinOfPodTimeseriesSize >= 2 && tenantMemoryMetricDesc.MaxOfPodMinTime < now-int64(autoScaleIntervalSec)+30 {
+			lastTimeOfScaleOutCausedByOOM := c.AutoScaleMeta.GetLastTimeScaleOutCausedByOOMOfTenant(tenant.Name)
+			if memQuotaExceededStats != nil && tenantMemoryMetricDesc.MinOfPodTimeseriesSize >= 2 && tenantMemoryMetricDesc.MaxOfPodMinTime < now-int64(autoScaleIntervalSec)+30 && lastTimeOfScaleOutCausedByOOM < now-int64(autoScaleIntervalSec) {
 				bestPodsInRuleOfOom, _ = ComputeBestPodsInRuleOfOOM(tenant, statsDelta)
-				Logger.Infof("[analyzeTaskLoop][%v]ComputeStatisticsOfTenant, Tenant %v , memory exceed quota count: %v %v , PodsMemoryExceedQuotaMap: %+v bestPodsInRuleOfOOM: %v ", tenant.Name, tenant.Name,
-					memQuotaExceededStats[0].Sum(), memQuotaExceededStats[0].Cnt(), podMemQuotaExceededMap, bestPodsInRuleOfOom)
+				Logger.Infof("[analyzeTaskLoop][%v]ComputeStatisticsOfTenant, Tenant %v , memory exceed quota count: %v %v statsDelta: %v, PodsMemoryExceedQuotaMap: %+v bestPodsInRuleOfOOM: %v ", tenant.Name, tenant.Name,
+					memQuotaExceededStats[0].Sum(), memQuotaExceededStats[0].Cnt(), statsDelta, podMemQuotaExceededMap, bestPodsInRuleOfOom)
 			} else {
 				if memQuotaExceededStats == nil {
 					Logger.Errorf("[error][analyzeTaskLoop][%v]empty metric: MemoryExceedQuota , tenant: %v", tenant.Name, tenant.Name)
@@ -455,6 +455,9 @@ func (task *AnalyzeTask) analyzeTaskLoop(c *ClusterManager) {
 			if bestPods != -1 && cntOfPods != bestPods {
 				Logger.Infof("[analyzeTaskLoop][%v] resize pods, from %v to  %v , tenant: %v", tenant.Name, tenant.GetCntOfPods(), bestPods, tenant.Name)
 				c.AutoScaleMeta.ResizePodsOfTenant(cntOfPods, bestPods, tenant.Name, c.tsContainer)
+				if bestPodsInRuleOfOom > cntOfPods {
+					c.AutoScaleMeta.SetLastTimeScaleOutCausedByOOMOfTenant(tenant.Name)
+				}
 				if c.SnsManager != nil {
 					c.SnsManager.TryToPublishTopology(tenant.Name, time.Now().UnixNano(), tenant.GetPodNames()) // public latest topology into SNS
 				}

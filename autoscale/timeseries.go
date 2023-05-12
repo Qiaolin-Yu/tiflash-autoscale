@@ -58,14 +58,15 @@ type AvgSigma struct {
 
 // description of SimpleTimeSeries
 type DescOfTenantTimeSeries struct {
-	MaxOfPodMaxTime        int64
-	MinOfPodMaxTime        int64
-	MaxOfPodMinTime        int64
-	MinOfPodMinTime        int64
-	MaxOfPodTimeseriesSize int
-	MinOfPodTimeseriesSize int
-	SumOfPodTimeseriesSize int
-	PodCnt                 int
+	MaxOfPodMaxTime               int64
+	MinOfPodMaxTime               int64
+	MaxOfPodMinTime               int64
+	MinOfPodMinTime               int64
+	MaxOfPodTimeseriesSize        int
+	MinOfPodTimeseriesSize        int
+	SumOfPodTimeseriesSize        int
+	PodCnt                        int
+	lastTimeOfScaleOutCausedByOOM int64
 	// MinIntervalSec         int
 	// MaxIntervalSec         int
 }
@@ -99,6 +100,7 @@ func (c *DescOfTenantTimeSeries) Init(o *DescOfPodTimeSeries) {
 	c.MaxOfPodTimeseriesSize = o.Size
 	c.MinOfPodTimeseriesSize = o.Size
 	c.PodCnt = 1
+	c.lastTimeOfScaleOutCausedByOOM = 0
 	// c.MinIntervalSec = o.IntervalSec
 	// c.MaxIntervalSec = o.IntervalSec
 }
